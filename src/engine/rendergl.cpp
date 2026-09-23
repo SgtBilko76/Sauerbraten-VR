@@ -726,7 +726,7 @@ static float androidEyeTanL = -1, androidEyeTanR = 1, androidEyeTanU = 1, androi
 // far more for close parallax than far. 8 (VARP is integer-only) is
 // closer to the eyeheight-based estimate above (14 units / ~1.65m ~=
 // 8.5) than 10 was.
-VARP(vrworldscale, 1, 8, 1000);
+VAR(vrworldscale, 1, 8, 1000);
 
 void android_sauer_set_eye(float dx, float dy, float dz,
                             float yaw, float pitch, float roll,
@@ -2313,7 +2313,7 @@ void gl_drawframe()
 // no double-layering). A flat darkening overlay drawn on top of
 // everything is the standard comfort fix. Percentage of full black;
 // tune live via /vrmenudim.
-VARP(vrmenudim, 0, 75, 100);
+VAR(vrmenudim, 0, 75, 100);
 
 // Same fix, separately tunable, for actual gameplay (gl_drawframe(), via
 // gl_drawhud() below) -- confirmed on-device as the same perceptual
@@ -2325,7 +2325,7 @@ VARP(vrmenudim, 0, 75, 100);
 // long before the light itself would -- this isn't lighting being
 // disabled, it's a symptom of the same overbrightness. Tune live via
 // /vrgamedim.
-VARP(vrgamedim, 0, 55, 100);
+VAR(vrgamedim, 0, 20, 100);
 
 static void drawvrdim(int amount, int w, int h)
 {
@@ -2635,13 +2635,13 @@ FVARP(conscale, 1e-3f, 0.33f, 1e3f);
 // rotation covers -- reported as the HUD being "too near"/"too big" and
 // hard to actually look at. Fraction of the original on-screen size the
 // HUD plane below is solved to occupy; tune live via /vrhudscale.
-VARP(vrhudscale, 8, 20, 100);
+VAR(vrhudscale, 8, 20, 100);
 
 // World units in front of the head to place the HUD plane (see
 // androidsethudmatrixheadlocked() below) -- purely a comfort/fusion
 // distance, since vrhudscale's formula keeps the apparent on-screen size
 // constant regardless of this value.
-VARP(vrhuddist, 2, 8, 200);
+VAR(vrhuddist, 2, 8, 200);
 
 // Head-locked HUD plane, used only around the actual gameplay HUD draw
 // calls (game::gameplayhud()/rendertexturepanel() below) -- NOT the base

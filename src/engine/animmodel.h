@@ -1334,6 +1334,12 @@ struct animmodel : model
         loopv(parts) parts[i]->loaded();
     }
 
+    void settranslate(const vec &t)
+    {
+        translate = t;
+        if(parts.length()) parts[0]->translate = t;
+    }
+
     static bool enabletc, enablealphablend, enablecullface, enablenormals, enabletangents, enablebones, enabledepthoffset;
     static vec lightdir, lightcolor;
     static float transparent, lastalphatest;

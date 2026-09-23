@@ -450,6 +450,11 @@ extern model *loadmodel(const char *name, int i = -1, bool msg = false);
 // the model isn't (yet) loaded; setmodelscale() is a no-op in that case.
 extern float getmodelscale(const char *name);
 extern void setmodelscale(const char *name, float scale);
+// Likewise for mdltrans, the model's baked-in offset. The VR viewmodel
+// zeroes it so the gun sits on the tracked hand instead of at the
+// screen-space position the hud guns were authored for.
+extern vec getmodeltrans(const char *name);
+extern void setmodeltrans(const char *name, const vec &t);
 extern void preloadmodel(const char *name);
 extern void flushpreloadedmodels(bool msg = true);
 

@@ -413,7 +413,29 @@ namespace game
     // trading a little size for less of that residual; the scale boost
     // below now carries more of the "make it feel closer/bigger" job
     // instead, since it doesn't cost any extra vergence.
-    VARP(hudgunvrdist, 1, 5, 1000);
+    // 0 = draw the viewmodel at the controller's real tracked position.
+    // This used to be forced out to a fixed 5 units because the gun would
+    // not stereo-fuse up close -- but that was reversed stereo (each eye
+    // was displaced to the other eye's side; see setcammatrix() in
+    // rendergl.cpp), not genuine vergence strain, and pushing it away
+    // also dropped it toward the bottom of the FOV and shrank it, which
+    // is what "the arms are too low" was. A non-zero value still forces
+    // the old fixed-distance behaviour, for tuning.
+    VAR(hudgunvrdist, 0, 0, 1000);
+
+    // Percent of the controller's real head-relative distance to draw the
+    // viewmodel at. 100 puts it exactly on the hand, which is "correct"
+    // but measured ~4.5 world units away and read as too far and too
+    // small; pulling it in makes it bigger without a scale boost, which
+    // matters because scale also magnifies the model's baked offset.
+    VAR(vrhudgundist, 10, 65, 200);
+
+    // Tenths of a world unit to lift the viewmodel by, along world up. A
+    // relaxed grip measures ~25 degrees below the view axis -- genuinely
+    // where the hand is, but it puts the gun at the bottom edge of the
+    // FOV. This raises it into view without moving the aim ray, which
+    // stays on the real controller pose (androidgetaim(), rendergl.cpp).
+    VAR(vrhudgunraise, -200, 8, 200);
 
     // Percentage of the model's own baked-in scale (mdlscale, set by
     // each gun's own .cfg) to render the VR viewmodel at -- a genuine
@@ -425,7 +447,16 @@ namespace game
     // a long time fixing. Applied as a temporary push/pop around just
     // the hud gun's own rendermodel() call (drawhudmodel() below), not
     // the model's real vwep/attachment scale seen by other players.
-    VARP(vrhudgunscale, 25, 200, 800);
+    // Back to 100 (the model's own authored size) now that the gun is
+    // drawn at the controller's real distance again: the 200% boost was
+    // only there to make a deliberately far-away viewmodel look
+    // reasonable. It also had a side effect worth not reintroducing --
+    // animmodel.h's part::render() applies modelmatrix.scale() BEFORE
+    // modelmatrix.translate(), so the model's own baked hud offset
+    // (mdltrans, e.g. "1.5 -1.85 -0.3" in hudguns/shotg/md5.cfg, authored
+    // for desktop's screen-space gun placement) got scaled up with it,
+    // shifting the gun further off the hand the bigger it was made.
+    VAR(vrhudgunscale, 25, 140, 800);
 #endif
 
     void drawhudmodel(fpsent *d, int anim, float speed = 0, int base = 0)
@@ -470,9 +501,16 @@ namespace game
                 // accuracy doesn't change. Matches how most VR shooters
                 // render their viewmodel at a fixed comfortable depth
                 // rather than the controller's exact tracked distance.
-                vec togun(sway); togun.sub(camera1->o);
-                float dist = togun.magnitude();
-                if(dist > 1e-3f) sway = vec(camera1->o).add(togun.div(dist).mul(float(hudgunvrdist)));
+                {
+                    vec togun(sway); togun.sub(camera1->o);
+                    float dist = togun.magnitude();
+                    // hudgunvrdist > 0 forces an absolute distance (the
+                    // old behaviour, kept for tuning); otherwise scale the
+                    // real distance by vrhudgundist.
+                    float want = hudgunvrdist > 0 ? float(hudgunvrdist) : dist*vrhudgundist/100.0f;
+                    if(dist > 1e-3f) sway = vec(camera1->o).add(togun.div(dist).mul(want));
+                }
+                sway.z += vrhudgunraise/10.0f;
 #endif
             }
         }
@@ -503,10 +541,21 @@ namespace game
 #ifdef __ANDROID__
         float vrgunrealscale = getmodelscale(gunname);
         setmodelscale(gunname, vrgunrealscale*vrhudgunscale/100.0f);
+        // Hud guns carry a baked mdltrans (e.g. "1.5 -1.85 -0.3" in
+        // hudguns/shotg/md5.cfg) that positions them for desktop's
+        // screen-space viewmodel. Drawn on a tracked hand that offset is
+        // just error -- it pushes the gun off the controller, mostly
+        // sideways, and grows with both vrhudgunscale and how close the
+        // gun is pulled. Zero it for this one draw so the model sits on
+        // the hand; restored right after, since the same model is also
+        // used elsewhere.
+        vec vrgunrealtrans = getmodeltrans(gunname);
+        setmodeltrans(gunname, vec(0, 0, 0));
 #endif
         rendermodel(NULL, gunname, anim, sway, testhudgun ? 0 : gunyaw, testhudgun ? 0 : gunpitch, MDL_LIGHT|MDL_HUD, interp, a, base, (int)ceil(speed));
 #ifdef __ANDROID__
         setmodelscale(gunname, vrgunrealscale);
+        setmodeltrans(gunname, vrgunrealtrans);
 #endif
         if(d->muzzle.x >= 0) d->muzzle = calcavatarpos(d->muzzle, 12);
     }

@@ -467,6 +467,22 @@ void setmodelscale(const char *name, float scale)
     if(m) m->scale = scale;
 }
 
+// Same idea for mdltrans. Note the engine applies this offset in the
+// model's *scaled* frame (animmodel.h's part::render() does
+// modelmatrix.scale() and only then modelmatrix.translate()), so a model
+// rendered at a boosted scale gets its baked offset boosted with it.
+vec getmodeltrans(const char *name)
+{
+    model *m = loadmodel(name);
+    return m ? m->translate : vec(0, 0, 0);
+}
+
+void setmodeltrans(const char *name, const vec &t)
+{
+    model *m = loadmodel(name);
+    if(m) m->settranslate(t);
+}
+
 void preloadmodelshaders(bool force)
 {
     if(initing) return;

@@ -1309,7 +1309,20 @@ namespace game
     void writegamedata(vector<char> &extras) {}
     void readgamedata(vector<char> &extras) {}
 
+#ifdef __ANDROID__
+    // A config.cfg written by an older build of this port pins the VR
+    // tuning cvars at whatever they were then, and main.cpp execs it after
+    // every compiled default -- so changing a default silently did nothing
+    // (confirmed on-device: vrgamedim/hudgunvrdist/vrhudgunscale all still
+    // read the previous build's values). The file lives in the app's
+    // private storage, which a release build can't be reached into to
+    // delete, so use a separate name here instead: the stale file is left
+    // untouched but no longer read. Paired with the VR cvars being plain
+    // VARs (non-persistent) now, so they can't be captured this way again.
+    const char *savedconfig() { return "config_vr.cfg"; }
+#else
     const char *savedconfig() { return "config.cfg"; }
+#endif
     const char *restoreconfig() { return "restore.cfg"; }
     const char *defaultconfig() { return "data/defaults.cfg"; }
     const char *autoexec() { return "autoexec.cfg"; }
