@@ -13,8 +13,16 @@
          build; see the project plan, Phase 0/1 risk notes. -->
 
     <uses-feature android:glEsVersion="0x00030001" android:required="true" />
+    <!-- required="false" so this stays installable on non-Meta OpenXR
+         headsets (Pico in particular, which does not declare this
+         Oculus/Daydream-era feature flag at all). The app genuinely does
+         need 6DoF, but that requirement is already enforced where it
+         actually matters: TBXR_Common.c fails out if the runtime can't
+         give it a STAGE/LOCAL reference space. Leaving this required
+         would make the Play/store installer reject the APK on hardware
+         that can in fact run it. -->
     <uses-feature android:name="android.hardware.vr.headtracking"
-        android:version="1" android:required="true" />
+        android:version="1" android:required="false" />
 
     <uses-permission android:name="android.permission.INTERNET" />
 
@@ -38,6 +46,17 @@
         <meta-data android:name="com.oculus.supportedDevices" android:value="quest2|quest3|questpro" />
         <meta-data android:name="com.oculus.vr.focusaware" android:value="true" />
 
+        <!-- Pico (PUI/Bytedance). Their launcher and OpenXR runtime look
+             for pvr.app.type to treat an app as immersive VR rather than a
+             flat 2D panel app; without it a Pico build launches into the
+             2D window shell. Ignored by Meta's runtime, so it's safe in
+             the same universal APK as the com.oculus.* metadata above.
+             The vendor-neutral Khronos loader this app ships
+             (openxr_loader_for_android, see build.gradle) already resolves
+             the runtime through the broker declared in <queries> above,
+             which is what actually makes one APK work on both. -->
+        <meta-data android:name="pvr.app.type" android:value="vr" />
+
         <activity
             android:exported="true"
             android:name="org.sauerquest.vr.SauerQuestActivity"
@@ -52,6 +71,11 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
                 <category android:name="com.oculus.intent.category.VR" />
+                <!-- The vendor-neutral equivalent of the Oculus category
+                     above: this is how a non-Meta OpenXR runtime (Pico's
+                     included) recognises the activity as an immersive VR
+                     entry point and lists it in the VR launcher. -->
+                <category android:name="org.khronos.openxr.intent.category.IMMERSIVE_HMD" />
             </intent-filter>
         </activity>
     </application>

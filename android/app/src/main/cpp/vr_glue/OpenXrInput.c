@@ -276,9 +276,81 @@ void TBXR_InitActions( void )
     CHECK_XRCMD(xrStringToPath(gAppState.Instance, "/user/hand/right/input/b/touch", &BTouchPath[SIDE_RIGHT]));
 
 
-    XrResult result;
+    /* Current Pico firmware (PUI) exposes its controllers through the
+       standardised XR_BD_controller_interaction profiles, not the
+       pre-standard "/interaction_profiles/pico/..." path the block below
+       originally used -- TBXR_Common.c already enables that extension
+       whenever the runtime offers it. xrSuggestInteractionProfileBindings()
+       rejects the WHOLE call if any single binding path is unsupported for
+       the profile, so this set is deliberately limited to inputs that
+       extension defines for both pico4 and pico_neo3: no back/click,
+       battery/value, thumbrest/touch or system/click (none of which this
+       game reads anyway -- see VR_HandleControllerInput() in
+       sauerquest_vr_bootstrap.c). Everything SauerQuest actually maps is
+       covered: aim and grip poses, trigger, grip, thumbstick, X/Y/A/B and
+       the left Menu button. NOT yet verified on real Pico hardware. */
+    XrResult result = XR_ERROR_PATH_UNSUPPORTED;
+    {
+        XrActionSuggestedBinding bindings[128];
+        int currBinding = 0;
+        bindings[currBinding++] = ActionSuggestedBinding(poseAction, posePath[SIDE_LEFT]);
+        bindings[currBinding++] = ActionSuggestedBinding(poseAction, posePath[SIDE_RIGHT]);
+        bindings[currBinding++] = ActionSuggestedBinding(aimAction, aimPath[SIDE_LEFT]);
+        bindings[currBinding++] = ActionSuggestedBinding(aimAction, aimPath[SIDE_RIGHT]);
+        bindings[currBinding++] = ActionSuggestedBinding(vibrateAction, hapticPath[SIDE_LEFT]);
+        bindings[currBinding++] = ActionSuggestedBinding(vibrateAction, hapticPath[SIDE_RIGHT]);
 
-    //First try Pico Devices
+        bindings[currBinding++] = ActionSuggestedBinding(triggerAction, triggerValuePath[SIDE_LEFT]);
+        bindings[currBinding++] = ActionSuggestedBinding(triggerAction, triggerValuePath[SIDE_RIGHT]);
+        bindings[currBinding++] = ActionSuggestedBinding(TriggerTouchAction, triggerTouchPath[SIDE_LEFT]);
+        bindings[currBinding++] = ActionSuggestedBinding(TriggerTouchAction, triggerTouchPath[SIDE_RIGHT]);
+        bindings[currBinding++] = ActionSuggestedBinding(GripAction, squeezeValuePath[SIDE_LEFT]);
+        bindings[currBinding++] = ActionSuggestedBinding(GripAction, squeezeValuePath[SIDE_RIGHT]);
+
+        bindings[currBinding++] = ActionSuggestedBinding(joystickAction, thumbstickPosPath[SIDE_LEFT]);
+        bindings[currBinding++] = ActionSuggestedBinding(joystickAction, thumbstickPosPath[SIDE_RIGHT]);
+        bindings[currBinding++] = ActionSuggestedBinding(touchpadAction, thumbstickClickPath[SIDE_LEFT]);
+        bindings[currBinding++] = ActionSuggestedBinding(touchpadAction, thumbstickClickPath[SIDE_RIGHT]);
+        bindings[currBinding++] = ActionSuggestedBinding(thumbstickTouchAction, thumbstickTouchPath[SIDE_LEFT]);
+        bindings[currBinding++] = ActionSuggestedBinding(thumbstickTouchAction, thumbstickTouchPath[SIDE_RIGHT]);
+
+        bindings[currBinding++] = ActionSuggestedBinding(XAction, XValuePath[SIDE_LEFT]);
+        bindings[currBinding++] = ActionSuggestedBinding(YAction, YValuePath[SIDE_LEFT]);
+        bindings[currBinding++] = ActionSuggestedBinding(XTouchAction, XTouchPath[SIDE_LEFT]);
+        bindings[currBinding++] = ActionSuggestedBinding(YTouchAction, YTouchPath[SIDE_LEFT]);
+        bindings[currBinding++] = ActionSuggestedBinding(AAction, AValuePath[SIDE_RIGHT]);
+        bindings[currBinding++] = ActionSuggestedBinding(BAction, BValuePath[SIDE_RIGHT]);
+        bindings[currBinding++] = ActionSuggestedBinding(ATouchAction, ATouchPath[SIDE_RIGHT]);
+        bindings[currBinding++] = ActionSuggestedBinding(BTouchAction, BTouchPath[SIDE_RIGHT]);
+
+        /* backAction is what the game reads as "open the main menu"
+           (xrButton_Enter). On Touch that comes from the left menu button;
+           the Bytedance profiles expose the same thing at the same path. */
+        bindings[currBinding++] = ActionSuggestedBinding(backAction, menuClickPath[SIDE_LEFT]);
+
+        static const char *const picoProfiles[] = {
+                "/interaction_profiles/bytedance/pico4_controller",
+                "/interaction_profiles/bytedance/pico_neo3_controller"};
+
+        for (int p = 0; p < (int)(sizeof(picoProfiles) / sizeof(picoProfiles[0])) &&
+                        result != XR_SUCCESS; p++)
+        {
+            XrPath profilePath;
+            if (XR_FAILED(xrStringToPath(gAppState.Instance, picoProfiles[p], &profilePath)))
+                continue;
+
+            XrInteractionProfileSuggestedBinding suggestedBindings = {};
+            suggestedBindings.type = XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING;
+            suggestedBindings.interactionProfile = profilePath;
+            suggestedBindings.suggestedBindings = bindings;
+            suggestedBindings.countSuggestedBindings = currBinding;
+            suggestedBindings.next = NULL;
+            result = xrSuggestInteractionProfileBindings(gAppState.Instance, &suggestedBindings);
+        }
+    }
+
+    //Then older, pre-standard Pico firmware
+    if (result != XR_SUCCESS)
     {
         XrPath picoMixedRealityInteractionProfilePath;
         CHECK_XRCMD(xrStringToPath(gAppState.Instance, "/interaction_profiles/pico/neo3_controller",

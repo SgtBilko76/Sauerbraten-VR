@@ -10,6 +10,17 @@ if (keystorePropsFile.exists()) {
     keystoreProps.load(new FileInputStream(keystorePropsFile))
 }
 
+// Where ndk-build puts its intermediates. On Windows the default
+// deeply-nested path makes SDL2's ~470-file `ar` command line exceed
+// CreateProcess' argument-length limit (see externalNativeBuild below), so
+// Windows builds are relocated to a short absolute path. Other platforms
+// have no such limit -- and no writable C:/ -- so they keep the output
+// inside the normal build tree instead of a hardcoded Windows path, which
+// is what makes this project buildable on Linux at all.
+def ndkBuildRoot = org.gradle.internal.os.OperatingSystem.current().isWindows()
+        ? "C:/sq_ndkbuild"
+        : "${rootProject.projectDir}/.ndkbuild"
+
 android {
     namespace = "org.sauerquest.vr"
     compileSdk = 34
@@ -32,7 +43,7 @@ android {
                 // See build.gradle's externalNativeBuild.ndkBuild comment
                 // for why (buildStagingDirectory doesn't affect ndk-build's
                 // actual output paths, only CMake's).
-                arguments "V=0", "-j$numProcs", "NDK_OUT=C:/sq_ndkbuild/obj", "NDK_LIBS_OUT=C:/sq_ndkbuild/lib"
+                arguments "V=0", "-j$numProcs", "NDK_OUT=$ndkBuildRoot/obj", "NDK_LIBS_OUT=$ndkBuildRoot/lib"
                 abiFilters 'arm64-v8a'
             }
         }
@@ -52,7 +63,7 @@ android {
             // overriding NDK_OUT/NDK_LIBS_OUT directly via extra ndk-build
             // `arguments`, which AGP's own packaging step wouldn't know
             // about).
-            buildStagingDirectory "C:/sq_ndkbuild"
+            buildStagingDirectory ndkBuildRoot
         }
     }
 
@@ -148,7 +159,7 @@ tasks.named("preBuild").configure {
 ["Debug", "Release"].each { buildTypeName ->
     tasks.register("copySDL2SharedLib${buildTypeName}", Copy) {
         dependsOn("buildNdkBuild${buildTypeName}")
-        from("C:/sq_ndkbuild/obj/local/arm64-v8a") {
+        from("$ndkBuildRoot/obj/local/arm64-v8a") {
             include "libSDL2.so"
         }
         into "$buildDir/generated/sdl2-shared/jniLibs/arm64-v8a"
