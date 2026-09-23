@@ -877,18 +877,35 @@ void setcammatrix()
     // lands on the *depth* axis instead of staying purely lateral, which
     // (confirmed on-device: reported as "too much difference between the
     // eyes") throws off both eyes' effective distance from nearby
-    // geometry, not just their apparent left-right separation. cammatrix
-    // at this point already holds exactly the world->head-local rotation
-    // built above (no translation applied yet) -- transposedtransformnormal()
-    // is the same "invert a pure rotation via its transpose" idiom used a
-    // few lines down for camdir/camright/camup, so reusing it here to
-    // bring the offset back into world space is guaranteed
-    // self-consistent with cammatrix's actual rotation, unlike
-    // independently re-deriving the reverse rotation sequence by hand (a
-    // prior attempt at that -- reversed order, negated angles -- did not
-    // resolve a reported inability to binocularly fuse the view).
+    // geometry, not just their apparent left-right separation.
+    //
+    // It must NOT be rotated by cammatrix, though, even though cammatrix
+    // does hold the head rotation: cammatrix starts from viewmatrix (the
+    // world->GL "quake style" axis swap at the top of this function), so
+    // transposedtransformnormal() through it consumes a vector in GL
+    // *view* axes -- +X right, +Y down, +Z forward, which is exactly
+    // what the camdir/camright/camup lines below define it as.
+    // android_sauer_set_eye()'s contract (androidbridge.h) is the
+    // opposite: dx/dy/dz arrive already remapped into Sauerbraten's own
+    // world axes (X lateral, Y forward, Z up). Passing world-axis
+    // components through the view-axis transform ran the lateral
+    // component through viewmatrix's own -1 on X and negated it, putting
+    // each eye on the *other* eye's side -- reversed stereo. That still
+    // fuses at a distance (parallax there is near zero) and fails
+    // precisely where parallax is largest, which is what every remaining
+    // "near things are doubled" report was. It was never an IPD/scale
+    // error, so no amount of vrworldscale/hudgunvrdist tuning could have
+    // fixed it. Rotating by a viewmatrix-free head rotation instead --
+    // the same matrix androidgetaim() above builds for the controller
+    // offset, which shares this identical world-axis contract and has
+    // always been correct -- puts both offsets on one convention.
+    matrix4 eyerot;
+    eyerot.identity();
+    eyerot.rotate_around_y(androidEyeRoll*RAD);
+    eyerot.rotate_around_x(androidEyePitch*-RAD);
+    eyerot.rotate_around_z(totalYaw*-RAD);
     vec eyeOffsetWorld;
-    cammatrix.transposedtransformnormal(androidEyeOffsetMeters, eyeOffsetWorld);
+    eyerot.transposedtransformnormal(androidEyeOffsetMeters, eyeOffsetWorld);
     // camera1->o is the player's logical/gameplay position (movement,
     // collision -- untouched here); the per-eye positional offset from
     // real head tracking is added only to the render-camera translation,
