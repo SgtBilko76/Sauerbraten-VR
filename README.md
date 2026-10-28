@@ -1,5 +1,7 @@
 # Sauerbraten-VR
 
+**Download, install guide, controls and pictures: [portroyale.online/sauerbraten.html](https://portroyale.online/sauerbraten.html)**
+
 [![Sponsor](https://img.shields.io/badge/Sponsor-SgtBilko76-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/SgtBilko76)
 
 
