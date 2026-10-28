@@ -11,6 +11,8 @@ One APK covers both headsets: the controller bindings and OpenXR extensions are 
 
 ## Controls
 
+![SauerQuest: Cube 2 Sauerbraten VR controller mapping](docs/controls.webp)
+
 | Input | Action |
 |---|---|
 | Right trigger | Fire / select |
