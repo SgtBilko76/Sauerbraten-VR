@@ -2623,6 +2623,13 @@ VARP(showfps, 0, 1, 1);
 #endif
 // Panel de métricas en el HUD VR: 0 nada, 1 fps y ms, 2 también tris/verts/draw calls.
 VARP(vrstats, 0, 2, 2);
+#ifdef __ANDROID__
+// Foveado fijo (XR_FB_foveation): 0 nada, 1 bajo, 2 medio, 3 alto. Dinámico = el
+// runtime baja el nivel cuando la GPU tiene margen. Ver vr_glue/VrPerf.c.
+extern int vrfoveation, vrfoveationdynamic;
+VARFP(vrfoveationdynamic, 0, 1, 1, android_vr_set_foveation(vrfoveation, vrfoveationdynamic));
+VARFP(vrfoveation, 0, 3, 3, android_vr_set_foveation(vrfoveation, vrfoveationdynamic));
+#endif
 VARP(showfpsrange, 0, 0, 1);
 VAR(showeditstats, 0, 0, 1);
 VAR(statrate, 1, 200, 1000);
@@ -2864,7 +2871,8 @@ void gl_drawhud()
         {
             // Métricas de rendimiento, en el mismo plano anclado a la cabeza que el
             // HUD de juego (si se pintan en coordenadas de pantalla no se ven en VR).
-            static int laststat = 0, fps = 0, bestdiff = 0, worstdiff = 0, ms = 0, tris = 0, verts = 0, calls = 0, batches = 0;
+            static int laststat = 0, fps = 0, bestdiff = 0, worstdiff = 0, ms = 0, tris = 0, verts = 0, calls = 0, batches = 0, havevr = 0;
+            static android_vr_metrics vm;
             if(totalmillis - laststat >= statrate)
             {
                 laststat = totalmillis - (totalmillis%statrate);
@@ -2872,6 +2880,7 @@ void gl_drawhud()
                 ms = fps > 0 ? (1000 + fps/2)/fps : 0;
                 tris = (vtris + xtraverts/3)/1000; verts = (vverts + xtraverts)/1000;
                 calls = glde; batches = gbatches;
+                havevr = android_vr_get_metrics(&vm);
             }
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
             pushhudmatrix();
@@ -2887,6 +2896,20 @@ void gl_drawhud()
                 draw_text(line2, sx, sy + FONTH, 0xE0, 0xE0, 0xE0);
                 defformatstring(line3, "draw %d  lotes %d  va %d  oq %d", calls, batches, allocva, getnumqueries());
                 draw_text(line3, sx, sy + 2*FONTH, 0xE0, 0xE0, 0xE0);
+                if(havevr)
+                {
+                    // Tiempos reales del runtime: app = nuestro frame, comp = compositor.
+                    // Si gpu app se acerca a 1000/Hz estamos limitados por GPU; si cpu app, por CPU.
+                    int rg = vm.appGpuMs >= 12.5f ? 0xFF : 0xA0, gg = vm.appGpuMs >= 12.5f ? 0x60 : 0xFF;
+                    defformatstring(line4, "gpu app %.1f ms  comp %.1f ms  uso %.0f%%", vm.appGpuMs, vm.compGpuMs, vm.gpuUtil);
+                    draw_text(line4, sx, sy + 3*FONTH, rg, gg, 0x60);
+                    int rc = vm.appCpuMs >= 12.5f ? 0xFF : 0xA0, gc = vm.appCpuMs >= 12.5f ? 0x60 : 0xFF;
+                    defformatstring(line5, "cpu app %.1f ms  uso %.0f%% (peor %.0f%%)  stale %d", vm.appCpuMs, vm.cpuUtilAvg, vm.cpuUtilWorst, vm.droppedFrames);
+                    draw_text(line5, sx, sy + 4*FONTH, rc, gc, 0x60);
+                    defformatstring(line6, "foveado %d%s  latencia %.0f ms  %.0f Hz", vm.foveationLevel, vm.foveationDynamic ? " din" : "", vm.latencyMs, vm.refreshHz);
+                    draw_text(line6, sx, sy + 5*FONTH, 0xB0, 0xB0, 0xB0);
+                }
+                else draw_text("sin metricas del runtime (XR_META_performance_metrics)", sx, sy + 3*FONTH, 0x90, 0x90, 0x90);
             }
             pophudmatrix();
         }

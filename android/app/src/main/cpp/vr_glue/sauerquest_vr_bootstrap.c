@@ -27,6 +27,7 @@
 
 #include "VrCommon.h"
 #include "androidbridge.h"
+#include "VrPerf.h"
 
 /* Same local definition TBXR_Common.c uses (DarkPlaces normally pulls
  * this in transitively via its own mathlib.h). */
@@ -446,6 +447,23 @@ void android_get_eye_size(int *w, int *h)
 {
     *w = (int)gAppState.Width;
     *h = (int)gAppState.Height;
+}
+
+int android_vr_get_metrics(android_vr_metrics *m)
+{
+    VrPerfMetrics p;
+    int ok = VrPerf_Query(&p);
+    m->appCpuMs = p.appCpuMs; m->appGpuMs = p.appGpuMs;
+    m->compCpuMs = p.compCpuMs; m->compGpuMs = p.compGpuMs; m->latencyMs = p.latencyMs;
+    m->cpuUtilAvg = p.cpuUtilAvg; m->cpuUtilWorst = p.cpuUtilWorst; m->gpuUtil = p.gpuUtil;
+    m->droppedFrames = p.droppedFrames; m->foveationLevel = p.foveationLevel;
+    m->foveationDynamic = p.foveationDynamic; m->refreshHz = p.refreshHz;
+    return ok;
+}
+
+void android_vr_set_foveation(int level, int dynamic)
+{
+    VrPerf_SetFoveation(level, dynamic);
 }
 
 void *AppThreadFunction(void *parm)

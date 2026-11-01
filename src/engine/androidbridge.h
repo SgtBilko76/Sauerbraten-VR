@@ -41,6 +41,18 @@ void android_sauer_endframe(void);
 // it's called.
 void android_get_eye_size(int *w, int *h);
 
+/* Métricas del runtime (XR_META_performance_metrics) y foveado fijo, para el
+ * panel vrstats de rendergl.cpp. Implementadas en vr_glue/sauerquest_vr_bootstrap.c
+ * sobre vr_glue/VrPerf.c. Valores -1 = no disponible. */
+typedef struct {
+    float appCpuMs, appGpuMs, compCpuMs, compGpuMs, latencyMs;
+    float cpuUtilAvg, cpuUtilWorst, gpuUtil;
+    int droppedFrames, foveationLevel, foveationDynamic;
+    float refreshHz;
+} android_vr_metrics;
+int android_vr_get_metrics(android_vr_metrics *m);
+void android_vr_set_foveation(int level, int dynamic);
+
 // Implemented in rendergl.cpp; called once per eye, immediately before
 // android_sauer_drawframe(), to report that eye's real OpenXR pose/FOV
 // for this frame. setcammatrix()/gl_drawframe() read these (instead of

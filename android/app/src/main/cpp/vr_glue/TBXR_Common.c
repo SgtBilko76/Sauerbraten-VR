@@ -13,6 +13,7 @@
 #include <android/input.h>
 
 #include "VrCommon.h"
+#include "VrPerf.h"
 
 /* Originally pulled in transitively via DarkPlaces' mathlib.h. */
 #ifndef DEG2RAD
@@ -580,6 +581,7 @@ static bool ovrFramebuffer_Create(
     swapChainCreateInfo.faceCount = 1;
     swapChainCreateInfo.arraySize = 1;
     swapChainCreateInfo.mipCount = 1;
+    swapChainCreateInfo.next = (void *)VrPerf_FoveationCreateInfo(); /* NULL si no hay foveado */
 
     frameBuffer->ColorSwapChain.Width = swapChainCreateInfo.width;
     frameBuffer->ColorSwapChain.Height = swapChainCreateInfo.height;
@@ -1728,6 +1730,9 @@ void TBXR_InitRenderer(  ) {
 			&gAppState.Renderer,
 			gAppState.Width,
 			gAppState.Height);
+
+	VrPerf_Init(gAppState.Instance, gAppState.Session);
+	VrPerf_SetFoveation(VR_DEFAULT_FOVEATION_LEVEL, VR_DEFAULT_FOVEATION_DYNAMIC);
 }
 
 void VR_DestroyRenderer(  )
@@ -1792,7 +1797,7 @@ void TBXR_InitialiseOpenXR()
 	OXR(xrEnumerateInstanceExtensionProperties(
 			NULL, availableExtensionCount, &availableExtensionCount, availableExtensions));
 
-	const char* enabledExtensions[16];
+	const char* enabledExtensions[32];
 	uint32_t enabledExtensionCount = 0;
 	TBXR_AddExtensionIfAvailable(
 			availableExtensions,
@@ -1851,6 +1856,26 @@ void TBXR_InitialiseOpenXR()
 				XR_FB_COLOR_SPACE_EXTENSION_NAME,
 				enabledExtensions,
 				&enabledExtensionCount);
+		/* SauVREngine: métricas de frame (CPU/GPU app y compositor) y foveado
+		 * fijo. Opcionales; ver VrPerf.c. */
+		vrPerfMetricsSupported = TBXR_AddExtensionIfAvailable(
+				availableExtensions, availableExtensionCount,
+				XR_META_PERFORMANCE_METRICS_EXTENSION_NAME,
+				enabledExtensions, &enabledExtensionCount);
+		bool fovA = TBXR_AddExtensionIfAvailable(
+				availableExtensions, availableExtensionCount,
+				XR_FB_FOVEATION_EXTENSION_NAME,
+				enabledExtensions, &enabledExtensionCount);
+		bool fovB = TBXR_AddExtensionIfAvailable(
+				availableExtensions, availableExtensionCount,
+				XR_FB_FOVEATION_CONFIGURATION_EXTENSION_NAME,
+				enabledExtensions, &enabledExtensionCount);
+		bool fovC = TBXR_AddExtensionIfAvailable(
+				availableExtensions, availableExtensionCount,
+				XR_FB_SWAPCHAIN_UPDATE_STATE_EXTENSION_NAME,
+				enabledExtensions, &enabledExtensionCount);
+		vrFoveationSupported = fovA && fovB && fovC;
+		ALOGV("SauVREngine: perf metrics %d, foveation %d", vrPerfMetricsSupported, vrFoveationSupported);
 	}
 
 	instanceCreateInfo.enabledExtensionCount = enabledExtensionCount;
