@@ -2623,6 +2623,8 @@ VARP(showfps, 0, 1, 1);
 #endif
 // Panel de métricas en el HUD VR: 0 nada, 1 fps y ms, 2 también tris/verts/draw calls.
 VARP(vrstats, 0, 2, 2);
+// Tamaño del panel: 1 = misma escala que el HUD de juego (h/1800); 1.5 por defecto para VR.
+FVARP(vrstatsscale, 0.5f, 1.5f, 4.0f);
 #ifdef __ANDROID__
 // Foveado fijo (XR_FB_foveation): 0 nada, 1 bajo, 2 medio, 3 alto. Dinámico = el
 // runtime baja el nivel cuando la GPU tiene margen. Ver vr_glue/VrPerf.c.
@@ -2884,7 +2886,8 @@ void gl_drawhud()
             }
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
             pushhudmatrix();
-            hudmatrix.scale(conscale, conscale, 1);
+            float vs = h/1800.0f*vrstatsscale;
+            hudmatrix.scale(vs, vs, 1);
             flushhudmatrix();
             int sx = FONTH/2, sy = FONTH/2;
             int r = fps >= 70 ? 0x60 : 0xFF, g = fps >= 70 ? 0xFF : fps >= 45 ? 0xC8 : 0x50, b = 0x40;
