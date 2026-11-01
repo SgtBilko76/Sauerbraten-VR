@@ -1,6 +1,7 @@
 // main.cpp: initialisation & main loop
 
 #include "engine.h"
+#include "enginename.h"
 
 #ifdef SDL_VIDEO_DRIVER_X11
 #include "SDL_syswm.h"
@@ -70,7 +71,7 @@ void fatal(const char *s, ...)    // failure exit
             }
             SDL_Quit();
 #ifndef __ANDROID__
-            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Cube 2: Sauerbraten fatal error", msg, NULL);
+            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, ENGINE_NAME " fatal error", msg, NULL);
 #endif
             // On Android, logoutf() above already reported this (and, via
             // the native-thread stdout/stderr redirection set up in
@@ -262,6 +263,19 @@ void renderbackground(const char *caption, Texture *mapshot, const char *mapname
         float ly = 0.2f*(h*0.5f - lh);
         settexture((maxtexsize ? min(maxtexsize, hwtexsize) : hwtexsize) >= 1024 && (screenw > 1280 || screenh > 800) ? "data/logo_1024.png" : "data/logo.png", 3);
         bgquad(lx, ly, lw, lh);
+        {
+            // Portada: nombre del motor bajo el logo (ver enginename.h).
+            static const char *enginetitle = ENGINE_TITLE;
+            int tw = text_width(enginetitle);
+            float tsz = 0.07f*min(w, h)/FONTH,
+                  tx = 0.5f*(w - tw*tsz), ty = ly + lh + 0.02f*min(w, h);
+            pushhudmatrix();
+            hudmatrix.translate(tx, ty, 0);
+            hudmatrix.scale(tsz, tsz, 1);
+            flushhudmatrix();
+            draw_text(enginetitle, 0, 0, 0xFF, 0xC8, 0x40);
+            pophudmatrix();
+        }
         if(caption)
         {
             int tw = text_width(caption);
@@ -731,7 +745,7 @@ void setupscreen()
             SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, config&2 ? 1 : 0);
             SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, config&2 ? fsaa : 0);
         }
-        screen = SDL_CreateWindow("Cube 2: Sauerbraten", winx, winy, winw, winh, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_INPUT_FOCUS | SDL_WINDOW_MOUSE_FOCUS | flags);
+        screen = SDL_CreateWindow(ENGINE_TITLE, winx, winy, winw, winh, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_INPUT_FOCUS | SDL_WINDOW_MOUSE_FOCUS | flags);
         if(!screen) continue;
 
     #ifdef __APPLE__
