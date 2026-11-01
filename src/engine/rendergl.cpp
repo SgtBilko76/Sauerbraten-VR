@@ -2616,7 +2616,13 @@ VARP(wallclocksecs, 0, 0, 1);
 
 static time_t walltime = 0;
 
+#ifdef __ANDROID__
+VARP(showfps, 0, 0, 1); // en VR lo sustituye vrstats (plano anclado a la cabeza)
+#else
 VARP(showfps, 0, 1, 1);
+#endif
+// Panel de métricas en el HUD VR: 0 nada, 1 fps y ms, 2 también tris/verts/draw calls.
+VARP(vrstats, 0, 2, 2);
 VARP(showfpsrange, 0, 0, 1);
 VAR(showeditstats, 0, 0, 1);
 VAR(statrate, 1, 200, 1000);
@@ -2852,6 +2858,38 @@ void gl_drawhud()
 #ifdef __ANDROID__
         bool vrheadlockhud = !mainmenu;
         if(vrheadlockhud) { pushhudmatrix(); androidsethudmatrixheadlocked(w, h); flushhudmatrix(); }
+#endif
+#ifdef __ANDROID__
+        if(vrstats && !hidestats)
+        {
+            // Métricas de rendimiento, en el mismo plano anclado a la cabeza que el
+            // HUD de juego (si se pintan en coordenadas de pantalla no se ven en VR).
+            static int laststat = 0, fps = 0, bestdiff = 0, worstdiff = 0, ms = 0, tris = 0, verts = 0, calls = 0, batches = 0;
+            if(totalmillis - laststat >= statrate)
+            {
+                laststat = totalmillis - (totalmillis%statrate);
+                getfps(fps, bestdiff, worstdiff);
+                ms = fps > 0 ? (1000 + fps/2)/fps : 0;
+                tris = (vtris + xtraverts/3)/1000; verts = (vverts + xtraverts)/1000;
+                calls = glde; batches = gbatches;
+            }
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            pushhudmatrix();
+            hudmatrix.scale(conscale, conscale, 1);
+            flushhudmatrix();
+            int sx = FONTH/2, sy = FONTH/2;
+            int r = fps >= 70 ? 0x60 : 0xFF, g = fps >= 70 ? 0xFF : fps >= 45 ? 0xC8 : 0x50, b = 0x40;
+            defformatstring(line1, "fps %d  %d ms  (+%d/-%d)", fps, ms, bestdiff, worstdiff);
+            draw_text(line1, sx, sy, r, g, b);
+            if(vrstats > 1)
+            {
+                defformatstring(line2, "tris %dk  verts %dk", tris, verts);
+                draw_text(line2, sx, sy + FONTH, 0xE0, 0xE0, 0xE0);
+                defformatstring(line3, "draw %d  lotes %d  va %d  oq %d", calls, batches, allocva, getnumqueries());
+                draw_text(line3, sx, sy + 2*FONTH, 0xE0, 0xE0, 0xE0);
+            }
+            pophudmatrix();
+        }
 #endif
         if(hidestats || (!editmode && !showeditstats))
         {
