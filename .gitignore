@@ -60,3 +60,7 @@ android/**/libs/
 Thumbs.db
 .vs/
 .vscode/
+
+# APKs compiladas por tools/apk/build-apk.mjs (se sirven con serve.mjs)
+/dist/
+/node_modules/
