@@ -27,7 +27,10 @@ android {
     ndkVersion '25.1.8937393'
 
     defaultConfig {
-        applicationId "org.sauerquest.vr"
+        // Id propio de SauVREngine: convive con el Sauerbraten-VR original
+        // (org.sauerquest.vr) sin conflicto de firma. El namespace y los nombres
+        // JNI (Java_org_sauerquest_vr_*) no cambian.
+        applicationId "org.sauvrengine.vr"
         minSdkVersion 29
         targetSdkVersion 32
         versionCode 13

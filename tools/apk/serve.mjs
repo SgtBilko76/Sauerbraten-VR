@@ -101,6 +101,7 @@ function serveApk(req, res, name) {
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url ?? '/', 'http://x');
+  console.log(new Date().toLocaleTimeString(), req.socket.remoteAddress, req.method, url.pathname, req.headers.range ?? '');
   if (url.pathname === '/' || url.pathname === '/index.html') return index(res, req);
   if (url.pathname === '/apks.json') {
     res.writeHead(200, { 'content-type': 'application/json' });
