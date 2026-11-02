@@ -99,7 +99,7 @@ function parseCfg(rel) {
 if (!findApk('packages/base/' + map + '.ogz') && !fs.existsSync(path.join(assets, 'packages/base/' + map + '.ogz'))) {
   console.error('la APK no trae packages/base/' + map + '.ogz'); process.exit(1);
 }
-for (const ext of ['.ogz', '.cfg', '.jpg', '.png']) want('packages/base/' + map + ext);
+for (const ext of ['.ogz', '.cfg', '.jpg', '.png', '.wpt']) want('packages/base/' + map + ext); // .wpt: waypoints de los bots
 parseCfg('data/default_map_settings.cfg');
 parseCfg('data/default_map_models.cfg');
 parseCfg('packages/base/' + map + '.cfg');
