@@ -2543,6 +2543,20 @@ VAR(vrmenudim, 0, 75, 100);
 // /vrgamedim.
 VAR(vrgamedim, 0, 20, 100);
 
+// Brillo extra para el visor (la pantalla del Quest es más apagada que un
+// monitor): un quad que multiplica el color por (1 + vrbright/100). 0 = nada.
+VARP(vrbright, 0, 0, 100);
+static void drawvrbright(int amount, int w, int h)
+{
+    hudnotextureshader->set();
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_DST_COLOR, GL_ONE);
+    float a = amount/100.0f;
+    gle::colorf(a, a, a, 1);
+    hudquad(0, 0, w, h);
+    glDisable(GL_BLEND);
+}
+
 static void drawvrdim(int amount, int w, int h)
 {
     if(amount <= 0) return;
@@ -3285,6 +3299,7 @@ void gl_drawhud()
 
 #ifdef __ANDROID__
     if(!mainmenu) drawvrdim(vrgamedim, w, h);
+    if(!mainmenu && vrbright) drawvrbright(vrbright, w, h);
 #endif
 
     glDisable(GL_BLEND);
