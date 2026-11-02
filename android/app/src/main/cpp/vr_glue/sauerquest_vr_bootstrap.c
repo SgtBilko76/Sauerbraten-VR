@@ -509,6 +509,11 @@ void android_vr_telemetry(const char *line)
 }
 
 int android_vr_unicast(void) { return VrTelemetry_HaveServer(); }
+#ifndef SAUVR_VNAME
+#define SAUVR_VNAME "dev"
+#endif
+const char *android_vr_build(void) { return SAUVR_VNAME; }
+int android_vr_status(char *buf, int len) { return VrTelemetry_Status(buf, (size_t)len); }
 int android_vr_srgbcontrol(void) { return TBXR_SrgbControl() ? 1 : 0; }
 
 int android_vr_multiview(void)
@@ -575,7 +580,7 @@ void android_vr_capture(int scale)
     }
     free(full);
     pthread_t th;
-    if (pthread_create(&th, NULL, vrCaptureSend, job) == 0) pthread_detach(th);
+    if (pthread_create(&th, NULL, vrCaptureSend, job) == 0) { pthread_detach(th); VrTelemetry_NoteCapture(); }
     else { free(job->rgb); free(job); }
 }
 
@@ -599,7 +604,7 @@ void *AppThreadFunction(void *parm)
     TBXR_InitActions();
     TBXR_WaitForSessionActive();
     vrInstallCrashHandler();
-    { char bl[128]; snprintf(bl, sizeof(bl), "sauvr boot multiview=%d srgb=%d", TBXR_Multiview() ? 1 : 0, TBXR_SrgbControl() ? 1 : 0); VrTelemetry_Send(bl); }
+    { char bl[128]; snprintf(bl, sizeof(bl), "sauvr boot build=%s multiview=%d srgb=%d", android_vr_build(), TBXR_Multiview() ? 1 : 0, TBXR_SrgbControl() ? 1 : 0); VrTelemetry_Send(bl); }
 
     ALOGV("SauerQuest VR bootstrap: booting engine (%dx%d per eye)",
           (int)gAppState.Width, (int)gAppState.Height);

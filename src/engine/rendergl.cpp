@@ -2909,6 +2909,7 @@ VARP(vrstats, 0, 1, 2);
 #ifdef __ANDROID__
 // Telemetría UDP al PC (serve.mjs la recoge): 0 no, 1 una línea por segundo.
 VARP(vrtelemetry, 0, 1, 1);
+static int vrcfgsent = 0; // la línea "sauvr cfg" ya salió al menos una vez en este mapa
 // Arma y brazo dentro de los reflejos del agua (0: no; el modelo pegado a la
 // mano se veía "flotando" en el reflejo).
 VARP(vrreflectavatar, 0, 0, 1);
@@ -3224,9 +3225,9 @@ void gl_drawhud()
                         extern int shaderdetail, bumpmodels, texcompress, maxtexsize, texreduce, aniso, trilinear, glslversion, hwtexsize; extern int vrenvprobe[4];
                         char fl[700]; int nf = getfailedshaders(fl, sizeof(fl));
                         char cl[1024];
-                        formatstring(cl, "sauvr cfg shaderdetail=%d bumpmodels=%d texcompress=%d maxtexsize=%d texreduce=%d aniso=%d trilinear=%d glsl=%d hwtex=%d env=%d/%d/%d n=%d sm=%d blobs=%d shfail=%d: %s",
-                            shaderdetail, bumpmodels, texcompress, maxtexsize, texreduce, aniso, trilinear, glslversion, hwtexsize, vrenvprobe[0], vrenvprobe[1], vrenvprobe[2], vrenvprobe[3], shadowmap, showblobs, nf, fl);
-                        android_vr_telemetry(cl);
+                        formatstring(cl, "sauvr cfg build=%s shaderdetail=%d bumpmodels=%d texcompress=%d maxtexsize=%d texreduce=%d aniso=%d trilinear=%d glsl=%d hwtex=%d env=%d/%d/%d n=%d sm=%d blobs=%d shfail=%d: %s",
+                            android_vr_build(), shaderdetail, bumpmodels, texcompress, maxtexsize, texreduce, aniso, trilinear, glslversion, hwtexsize, vrenvprobe[0], vrenvprobe[1], vrenvprobe[2], vrenvprobe[3], shadowmap, showblobs, nf, fl);
+                        android_vr_telemetry(cl); vrcfgsent = 1;
                     }
                 }
             }
@@ -3239,6 +3240,15 @@ void gl_drawhud()
             flushhudmatrix();
             int sx = FONTH/2, sy = FONTH/2;
             int r = fps >= 70 ? 0x60 : 0xFF, g = fps >= 70 ? 0xFF : fps >= 45 ? 0xC8 : 0x50, b = 0x40;
+            // Indicador de que la build, la telemetría y las capturas funcionan de verdad
+            // (verde cuando el PC contesta; ámbar si no hay acuse o la telemetría está apagada).
+            {
+                char st[160]; android_vr_status(st, sizeof(st));
+                defformatstring(line0, "build %s  |  %s  |  sm %d blobs %d  cfg %s", android_vr_build(), vrtelemetry ? st : "telemetria apagada", shadowmap, showblobs, vrcfgsent ? "enviada" : "pendiente");
+                bool ok = vrtelemetry && android_vr_unicast();
+                draw_text(line0, sx, sy, ok ? 0x80 : 0xFF, ok ? 0xFF : 0xC0, ok ? 0x80 : 0x40);
+                sy += FONTH;
+            }
             defformatstring(line1, "fps %d  %d ms  (+%d/-%d)", fps, ms, bestdiff, worstdiff);
             draw_text(line1, sx, sy, r, g, b);
             if(vrstats > 1)

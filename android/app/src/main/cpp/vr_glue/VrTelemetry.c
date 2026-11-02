@@ -30,6 +30,9 @@ static time_t lastscan = 0;
 static struct sockaddr_in serverAddr;
 static int haveServer = 0;
 static time_t lastAck = 0;
+/* Contadores para el indicador del HUD (VrTelemetry_Status). */
+static int sentLines = 0, sentCaptures = 0, acks = 0;
+static char serverIp[32] = "";
 
 static void pollAck(void)
 {
@@ -41,7 +44,8 @@ static void pollAck(void)
         buf[n] = 0;
         if (!strncmp(buf, "sauvrack", 8)) {
             if (!haveServer) ALOGV("telemetría: servidor en %s", inet_ntoa(from.sin_addr));
-            serverAddr = from; haveServer = 1; lastAck = time(NULL);
+            serverAddr = from; haveServer = 1; lastAck = time(NULL); acks++;
+            strncpy(serverIp, inet_ntoa(from.sin_addr), sizeof(serverIp) - 1);
         }
     }
     /* sin acuses en 15 s: volver al broadcast (el PC cambió de IP o se cerró) */
@@ -59,6 +63,13 @@ static void ensureSocket(void)
 }
 
 int VrTelemetry_HaveServer(void) { return haveServer; }
+void VrTelemetry_NoteCapture(void) { sentCaptures++; }
+int VrTelemetry_Status(char *buf, size_t len)
+{
+    if (haveServer) return snprintf(buf, len, "PC %s ok  %d lineas  %d acuses  %d capturas", serverIp, sentLines, acks, sentCaptures);
+    if (acks) return snprintf(buf, len, "PC %s sin respuesta %lds  %d lineas  %d capturas", serverIp, (long)(time(NULL) - lastAck), sentLines, sentCaptures);
+    return snprintf(buf, len, "buscando PC (broadcast %d redes)  %d lineas", numtargets, sentLines);
+}
 
 static void scanInterfaces(void)
 {
@@ -97,6 +108,7 @@ void VrTelemetry_Send(const char *line)
     if (sock < 0) return;
     pollAck();
     size_t len = strlen(line);
+    sentLines++;
     if (haveServer) { sendto(sock, line, len, MSG_DONTWAIT, (struct sockaddr *)&serverAddr, sizeof(serverAddr)); return; }
     time_t now = time(NULL);
     if (numtargets == 0 || now - lastscan >= 10) { scanInterfaces(); lastscan = now; }

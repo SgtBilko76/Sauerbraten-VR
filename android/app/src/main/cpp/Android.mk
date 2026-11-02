@@ -168,7 +168,7 @@ LOCAL_SRC_FILES := \
     vr_glue/VrPerf.c \
     vr_glue/VrTelemetry.c
 
-LOCAL_CFLAGS := -Wall -Wno-unused-variable -Wno-unused-function
+LOCAL_CFLAGS := -Wall -Wno-unused-variable -Wno-unused-function -DSAUVR_VNAME=\"$(SAUVR_VNAME)\"
 
 # Phase 4: sauerquest_vr_bootstrap.c now calls into the engine
 # (android_sauer_main/tick/drawframe/endframe, via androidbridge.h) every
