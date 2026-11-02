@@ -1867,6 +1867,9 @@ VARR(refractsky, 0, 0, 1);
 
 matrix4 noreflectmatrix;
 
+#ifdef __ANDROID__
+extern int vrreflectavatar;
+#endif
 void drawreflection(float z, bool refract, int fogdepth, const bvec &col)
 {
     reflectz = z < 0 ? 1e16f : z;
@@ -1966,6 +1969,9 @@ void drawreflection(float z, bool refract, int fogdepth, const bvec &col)
         }
         else projmatrix = avatarproj;
         setcamprojmatrix(false, true);
+#ifdef __ANDROID__
+        if(vrreflectavatar)
+#endif
         game::renderavatar();
         projmatrix = oldprojmatrix;
         setcamprojmatrix(false, true);
@@ -2881,6 +2887,9 @@ VARP(vrstats, 0, 1, 2);
 #ifdef __ANDROID__
 // Telemetría UDP al PC (serve.mjs la recoge): 0 no, 1 una línea por segundo.
 VARP(vrtelemetry, 0, 1, 1);
+// Arma y brazo dentro de los reflejos del agua (0: no; el modelo pegado a la
+// mano se veía "flotando" en el reflejo).
+VARP(vrreflectavatar, 0, 0, 1);
 // Captura de pantalla del visor al PC por UDP (ver android_vr_capture en el glue):
 // /vrcapture ahora, o automática cada N segundos (0 = no).
 VARP(vrautocapture, 0, 30, 600);
@@ -3163,12 +3172,12 @@ void gl_drawhud()
                 {
                     lasttelemetry = totalmillis;
                     extern int androidEyeIndex;
-                    char tl[1024]; formatstring(tl, "sauvr map=%s fps=%d ms=%d best=%d worst=%d tris=%dk verts=%dk draw=%d lotes=%d va=%d gpu=%.1f comp=%.1f cpu=%.1f gpuutil=%.0f cpuutil=%.0f cpuworst=%.0f stale=%d lat=%.0f hz=%.0f fov=%d pvs=%d pvsbg=%d dyn=%d fovn=%d mv=%d glerr=%d gllast=%x e502=%d e505=%d e506=%d ux=%d rfl=%d wvis=%d wp=%d wpvs=%x",
+                    char tl[1024]; formatstring(tl, "sauvr map=%s fps=%d ms=%d best=%d worst=%d tris=%dk verts=%dk draw=%d lotes=%d va=%d gpu=%.1f comp=%.1f cpu=%.1f gpuutil=%.0f cpuutil=%.0f cpuworst=%.0f stale=%d lat=%.0f hz=%.0f fov=%d pvs=%d pvsbg=%d dyn=%d fovn=%d mv=%d glerr=%d gllast=%x e502=%d e505=%d e506=%d ux=%d srgb=%d rfl=%d wvis=%d wp=%d wpvs=%x",
                         game::getclientmap(), fps, ms, bestdiff, worstdiff, tris, verts, calls, batches, allocva,
                         havevr ? vm.appGpuMs : -1.0f, havevr ? vm.compGpuMs : -1.0f, havevr ? vm.appCpuMs : -1.0f,
                         havevr ? vm.gpuUtil : -1.0f, havevr ? vm.cpuUtilAvg : -1.0f, havevr ? vm.cpuUtilWorst : -1.0f,
                         havevr ? vm.droppedFrames : -1, havevr ? vm.latencyMs : -1.0f, havevr ? vm.refreshHz : -1.0f,
-                        havevr ? vm.foveationLevel : -1, getnumviewcells(), pvsbgprogress(), game::numdynents(), androidEyeIndex, vrmultiviewactive, vrglerrors, vrlastglerror, vrglerr502, vrglerr505, vrglerr506, android_vr_unicast(), vrreflectdraws, vrreflectvisible, getnumwaterplanes(), getcurwaterpvs());
+                        havevr ? vm.foveationLevel : -1, getnumviewcells(), pvsbgprogress(), game::numdynents(), androidEyeIndex, vrmultiviewactive, vrglerrors, vrlastglerror, vrglerr502, vrglerr505, vrglerr506, android_vr_unicast(), android_vr_srgbcontrol(), vrreflectdraws, vrreflectvisible, getnumwaterplanes(), getcurwaterpvs());
                     vrglerrors = 0; vrglerr502 = vrglerr505 = vrglerr506 = 0; vrreflectdraws = 0; vrreflectvisible = 0;
                     // Captura automática: 10 s después de cargar un mapa y luego cada vrautocapture s.
                     static string capmap; static int nextcapture = 0;

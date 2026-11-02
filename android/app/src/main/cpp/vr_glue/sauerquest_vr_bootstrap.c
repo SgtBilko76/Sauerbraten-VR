@@ -484,6 +484,7 @@ void android_vr_telemetry(const char *line)
 }
 
 int android_vr_unicast(void) { return VrTelemetry_HaveServer(); }
+int android_vr_srgbcontrol(void) { return TBXR_SrgbControl() ? 1 : 0; }
 
 int android_vr_multiview(void)
 {

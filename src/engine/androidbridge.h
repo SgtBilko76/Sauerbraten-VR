@@ -69,6 +69,7 @@ int android_vr_multiview(void);
  * y lo manda al PC por UDP en trozos (tools/apk/capture.mjs lo guarda en PNG). */
 void android_vr_capture(void);
 int android_vr_unicast(void); /* 1 si la telemetría va directa al PC */
+int android_vr_srgbcontrol(void); /* 1 si el glue desactivó la codificación sRGB al escribir */
 /* Tiempos medios por frame (ms) del bucle VR desde la última llamada: espera en
  * xrWaitFrame (TBXR_FrameSetup), xrEndFrame (TBXR_submitFrame) y frame completo.
  * Devuelve el número de frames acumulados y pone los acumuladores a cero. */

@@ -673,6 +673,13 @@ void setupscreen()
     // knows.
     android_get_eye_size(&screenw, &screenh);
     { extern int vrmultiviewactive; vrmultiviewactive = android_vr_multiview(); }
+    if(android_vr_srgbcontrol())
+    {
+        // Con la conversión sRGB desactivada el color coincide con el PC: fuera los
+        // oscurecedores que compensaban la sobreexposición (ver TBXR_InitRenderer).
+        extern int vrgamedim, vrmenudim;
+        vrgamedim = 0; vrmenudim = 0;
+    }
     return;
 #else
     if(glcontext)

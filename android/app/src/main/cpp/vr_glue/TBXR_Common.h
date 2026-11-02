@@ -386,6 +386,7 @@ void TBXR_WaitForSessionActive();
 void TBXR_InitRenderer();
 /* SauVREngine: multiview activo en esta sesión (decidido en TBXR_InitRenderer). */
 bool TBXR_Multiview(void);
+bool TBXR_SrgbControl(void);
 /* Marca que el arranque llegó a dibujar frames (protección anticrash-loop). */
 void TBXR_MarkBootOk(void);
 void TBXR_EnterVR();

@@ -1148,7 +1148,13 @@ void renderclient(dynent *d, const char *mdlname, modelattach *attachments, int 
     if(d->type==ENT_PLAYER) flags |= MDL_FULLBRIGHT;
     else flags |= MDL_CULL_DIST;
     if(d->state==CS_LAGGED) fade = min(fade, 0.3f);
+#ifdef __ANDROID__
+    // VR: el propio jugador no lleva sombra (su blob aparecía flotando en los
+    // reflejos y bajo la mano); los bots sí.
+    else if(d != player) flags |= MDL_DYNSHADOW;
+#else
     else flags |= MDL_DYNSHADOW;
+#endif
     if(drawtex == DRAWTEX_MODELPREVIEW) flags &= ~(MDL_LIGHT | MDL_FULLBRIGHT | MDL_CULL_VFC | MDL_CULL_OCCLUDED | MDL_CULL_QUERY | MDL_CULL_DIST | MDL_DYNSHADOW);
     rendermodel(NULL, mdlname, anim, o, yaw, pitch, flags, d, attachments, basetime, 0, fade);
 }

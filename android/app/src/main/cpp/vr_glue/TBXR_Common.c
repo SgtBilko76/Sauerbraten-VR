@@ -152,6 +152,7 @@ typedef struct
 {
 	bool multi_view;						// GL_OVR_multiview, GL_OVR_multiview2
 	bool EXT_texture_border_clamp;			// GL_EXT_texture_border_clamp, GL_OES_texture_border_clamp
+	bool srgb_write_control;				// GL_EXT_sRGB_write_control (SauVREngine)
 } OpenGLExtensions_t;
 
 OpenGLExtensions_t glExtensions;
@@ -317,6 +318,7 @@ static void EglInitExtensions()
 	const char * allExtensions = (const char *)glGetString( GL_EXTENSIONS );
 	if ( allExtensions != NULL )
 	{
+		glExtensions.srgb_write_control = strstr( allExtensions, "GL_EXT_sRGB_write_control" ) != NULL;
 		glExtensions.multi_view = strstr( allExtensions, "GL_OVR_multiview2" ) &&
 								  strstr( allExtensions, "GL_OVR_multiview_multisampled_render_to_texture" );
 
@@ -1546,6 +1548,7 @@ static void vrWriteFlag(const char *name, const char *val) {
     FILE *f = fopen(p, "w"); if (!f) return; fputs(val, f); fclose(f);
 }
 bool TBXR_Multiview(void) { return useMultiview; }
+bool TBXR_SrgbControl(void) { return glExtensions.srgb_write_control; }
 void TBXR_MarkBootOk(void) { static bool done = false; if (done) return; done = true; vrWriteFlag("vrboot.txt", "ok"); }
 static void TBXR_DecideMultiview(void) {
     const char *dir = SDL_AndroidGetInternalStoragePath();
@@ -1788,6 +1791,14 @@ void TBXR_InitRenderer(  ) {
 	}
 
 	TBXR_DecideMultiview();
+	/* SauVREngine: la swapchain es GL_SRGB8_ALPHA8 y el motor ya escribe colores
+	 * en espacio gamma (Cube 2 no es lineal), así que GLES los codificaba otra
+	 * vez: todo sobreexpuesto, que el port tapaba con vrgamedim/vrmenudim.
+	 * GL_EXT_sRGB_write_control permite desactivar esa conversión al escribir. */
+	if (glExtensions.srgb_write_control) {
+		glDisable(0x8DB9 /* GL_FRAMEBUFFER_SRGB_EXT */);
+		ALOGV("SauVREngine: sRGB write control: conversión desactivada (colores gamma directos)");
+	} else ALOGE("SauVREngine: sin GL_EXT_sRGB_write_control; la imagen irá sobreexpuesta");
 	ovrRenderer_Create(
 			gAppState.Session,
 			&gAppState.Renderer,
