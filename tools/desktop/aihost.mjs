@@ -15,7 +15,7 @@ const exe = path.join(repo, 'bin64', 'sauerbraten.exe');
 const assets = path.join(repo, 'android', 'app', 'src', 'main', 'assets');
 if (!fs.existsSync(exe)) { console.error('falta bin64/sauerbraten.exe: npm run desktop:build'); process.exit(1); }
 const args = process.argv.slice(2);
-const opt = (name, def) => (args.includes(name) ? args[args.indexOf(name) + 1] : def);
+const opt = (name, def) => (args.includes(name) ? args[args.indexOf(name) + 1] : (process.env['npm_config_' + name.replace(/^--/, '')] ?? def)); // npm se come los --flags: también npm_config_*
 const bots = +opt('--bots', 16);
 const skill = +opt('--skill', 60);
 const port = +opt('--port', 28785);
@@ -29,7 +29,8 @@ const home = path.join(repo, 'dist', 'aihost');
 fs.mkdirSync(home, { recursive: true });
 fs.rmSync(path.join(home, 'log.txt'), { force: true });
 // conectar → admin (setmaster) → espectador → añadir bots (addbot de un admin no tiene límite)
-const script = `name aihost; aihost 1; connect ${host} ${port}; sleep 3000 [setmaster ${adminpass}; sleep 500 [spectator 1; sleep 1000 [loop i ${bots} [addbot ${skill}]]]]`;
+// aihostbots: el propio cliente añade y repone los bots (el servidor los borra al cambiar de mapa)
+const script = `name aihost; aihost 1; aihostskill ${skill}; aihostbots ${bots}; connect ${host} ${port}; sleep 3000 [setmaster ${adminpass}; sleep 500 [spectator 1]]`;
 const child = spawn(exe, ['-H', `-q${home}`, '-glog.txt', '-w320', '-h240', '-t0', '-x' + script], { cwd: assets, stdio: 'ignore' });
 console.log(`anfitrión de IA → ${host}:${port}, ${bots} bots (skill ${skill}); log en ${path.join(home, 'log.txt')}`);
 child.on('exit', (code) => { console.log(`aihost terminado (${code})`); process.exit(code ?? 0); });
