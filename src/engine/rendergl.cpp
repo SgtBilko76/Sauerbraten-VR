@@ -3172,7 +3172,8 @@ void gl_drawhud()
         if(vrheadlockhud) { pushhudmatrix(); androidsethudmatrixheadlocked(w, h); flushhudmatrix(); }
 #endif
 #ifdef __ANDROID__
-        if(vrstats && !hidestats)
+        // Telemetría siempre que esté activa, aunque el panel (vrstats) esté apagado.
+        if((vrstats || vrtelemetry) && !hidestats)
         {
             // Métricas de rendimiento, en el mismo plano anclado a la cabeza que el
             // HUD de juego (si se pintan en coordenadas de pantalla no se ven en VR).
@@ -3225,6 +3226,8 @@ void gl_drawhud()
                     }
                 }
             }
+            if(vrstats)
+            {
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
             pushhudmatrix();
             float vs = h/1800.0f*vrstatsscale;
@@ -3268,6 +3271,7 @@ void gl_drawhud()
                 else draw_text("sin metricas del runtime (XR_META_performance_metrics)", sx, sy + 3*FONTH, 0x90, 0x90, 0x90);
             }
             pophudmatrix();
+            }
         }
 #endif
         if(hidestats || (!editmode && !showeditstats))
