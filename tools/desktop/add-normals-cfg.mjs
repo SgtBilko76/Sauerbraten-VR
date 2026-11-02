@@ -25,7 +25,14 @@ for (const line of lines) {
   if (!m) { out.push(line); continue; }
   const indent = m[1], tex = m[3] ?? m[4], rest = m[5] ?? '';
   const nrel = tex.replace(/\.[^./]+$/, '') + '_n.png';
-  const hasN = fs.existsSync(path.join(root, nrel));
+  // si el slot ya declara su propio "texture n" (packs con normales reales), no se toca
+  let ownN = false;
+  for (let j = lines.indexOf(line) + 1; j < lines.length; j++) {
+    const l = lines[j];
+    if (/^s*(textures+0|setshader|texturereset)/.test(l)) break;
+    if (/^s*textures+n/.test(l)) { ownN = true; break; }
+  }
+  const hasN = !ownN && fs.existsSync(path.join(root, nrel));
   if (hasN && !isBump(cur)) {
     if (!overridden) { out.push(indent + 'setshader bumpworld // SauVREngine: relieve generado'); overridden = true; }
     out.push(line);

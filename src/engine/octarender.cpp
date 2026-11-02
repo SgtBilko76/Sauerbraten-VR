@@ -1817,3 +1817,35 @@ ICOMMAND(mapstats, "", (), {
     extern vector<LightMapTexture> lightmaptexs; extern vector<LightMap> lightmaps;
     conoutf("mapstats wtris=%d wverts=%d va=%d lightmaps=%d lmtex=%d worldsize=%d", wtris, wverts, allocva, lightmaps.length(), lightmaptexs.length(), worldsize);
 });
+
+// SauVREngine: dependencias reales del mapa cargado (slots de textura usados por
+// algún cubo, mapmodels colocados y skybox), para que tools/desktop/import-map.mjs
+// copie a la APK solo lo que el mapa necesita.
+static void mapdepscubes(cube *c, vector<int> &used)
+{
+    loopi(8)
+    {
+        if(c[i].children) mapdepscubes(c[i].children, used);
+        else if(!isempty(c[i])) loopj(6) { int t = c[i].texture[j]; if(used.find(t) < 0) used.add(t); }
+    }
+}
+ICOMMAND(mapdeps, "", (), {
+    extern vector<VSlot *> vslots; extern vector<mapmodelinfo> mapmodels; extern char *skybox;
+    vector<int> used; mapdepscubes(worldroot, used);
+    used.sort();
+    loopv(used)
+    {
+        int vi = used[i]; if(!vslots.inrange(vi)) continue;
+        Slot &s = *vslots[vi]->slot;
+        string line; formatstring(line, "dep slot %d", s.index);
+        static const char *textypes = "cudngszae"; // orden de TEX_DIFFUSE.. en texture.h
+        loopvj(s.sts) { int ty = s.sts[j].type; defformatstring(t, " %c:%s", ty >= 0 && ty < 9 ? textypes[ty] : "?"[0], s.sts[j].name); concatstring(line, t); }
+        conoutf("%s", line);
+    }
+    vector<int> models;
+    const vector<extentity *> &ents = entities::getents();
+    loopv(ents) if(ents[i]->type==ET_MAPMODEL && models.find(ents[i]->attr2) < 0) models.add(ents[i]->attr2);
+    loopv(models) if(mapmodels.inrange(models[i])) conoutf("dep model %s", mapmodels[models[i]].name);
+    conoutf("dep sky %s", skybox);
+    conoutf("dep end slots=%d models=%d", used.length(), models.length());
+});

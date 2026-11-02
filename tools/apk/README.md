@@ -75,3 +75,23 @@ de objetos de `src/Makefile`, compila en paralelo y enlaza estático en
 `npm run pvs:bake -- duel7 [--cell 32]` arranca ese exe con los assets de
 Android como cwd y el comando `pvsbake`, y deja `duel7.pvs` en
 `android/app/src/main/assets/packages/base/`. duel7: 2243 celdas, 82 kB, <1 min.
+
+## Importar otro mapa de Sauerbraten a la APK
+
+La APK original (`dist/apk/sauerbraten-vr.apk`, 1 GB) trae los ~330 mapas y
+todos los packages. Para meter uno sin arrastrar el resto:
+
+```
+npm run desktop:build                       # una vez: bin64/sauerbraten.exe con mapstats/mapdeps
+# 1) dependencias reales (slots usados, mapmodels colocados, skybox): desde la build de escritorio
+#    bin64/sauerbraten.exe -q<home> -glog.txt -t0 "-xmap ruebli; sleep 5000 [mapdeps; quit]"  → grep "^dep " log.txt > ruebli.deps
+node tools/desktop/import-map.mjs ruebli --deps ruebli.deps   # copia solo eso de la APK a assets/ (ruebli: 220 ficheros, 16 MB)
+node tools/desktop/expand-cfg.mjs ruebli                      # mapas sin cfg: slots por defecto expandidos para poder añadir relieve
+powershell -File tools/desktop/gen-normals.ps1 -List difusas.txt -Root assets/packages -Strength 1.0
+node tools/desktop/add-normals-cfg.mjs assets/packages base/ruebli.cfg
+# 2) hornear en el PC: luz (lightprecision 16, lighterror 4, bumperror 2, blurlms 1, blurskylight 1; calclight; savemap) y PVS
+npm run pvs:bake -- ruebli --cell 32
+# 3) data/lists.cfg: solo los mapas empaquetados (menú); versionCode nuevo → assets re-extraídos en el visor
+```
+
+`mapstats` imprime triángulos/vértices del mundo (duel7 32k, ruebli 196k, skycastle-r 384k).
