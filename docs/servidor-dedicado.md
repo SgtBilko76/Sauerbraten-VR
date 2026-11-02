@@ -150,3 +150,9 @@ Estructura sugerida: `server/go/` con `cmd/sauvr-lobby`, paquetes
   (serveraihost 1) solo da bots a admins y reasigna los ajenos. Medido: 16 bots,
   owned=16, 0,3 ms de IA por frame en el PC; los simulados reportan owned=0; cada
   cliente recibe 11 kB/s. Pendiente: probar con el visor dentro (tick= debe quedar < 2 ms con 32 bots).
+- Medido con el visor dentro (2026-11-02, 32 bots en el anfitrión): el tick del
+  visor baja de 25-60 ms a 3-7 ms (ya no piensa bots). Lo que manda ahora son los
+  34 personajes en escena: duel7 44 fps (todos a la vista: modelos 6,6 ms,
+  partículas 6,7 ms, GPU 11,6 ms, CPU 24,7 ms) y ruebli 54 fps (repartidos,
+  CPU 19,4 ms). Siguiente bloque: interpolar sin colisión a los remotos lejanos,
+  LOD de modelos por distancia y tope de partículas más bajo con muchos combatientes.

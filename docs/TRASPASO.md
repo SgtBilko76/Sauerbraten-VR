@@ -31,7 +31,7 @@ Regla del proyecto: tras cada APK nueva, reiniciar `apk:serve`.
 
 ## Pendiente, por orden de valor
 
-1. **IA para 30+ bots** (la fase que manda ahora). Con 32 bots el tick sube a 25-60 ms y
+1. **32 jugadores en escena** (la fase que manda ahora; la IA ya corre en el PC, ver docs/servidor-dedicado.md §7: anfitrión de IA, clientes simulados). Con 32 bots del servidor el visor va a 44-54 fps por modelos (6,6 ms), partículas (6,7 ms) y GPU (11,6 ms), no por IA. Plan: interpolar sin colisión a los remotos lejanos, LOD de modelos por distancia, tope de partículas más bajo con muchos combatientes. Lo que sigue del punto original: Con 32 bots el tick sube a 25-60 ms y
    las partículas a 5-13 ms. Plan: repartir `ai::think` entre frames (round-robin, cada
    bot piensa cada N frames según distancia al jugador), bajar la frecuencia de ruta y
    sentidos de bots lejanos, presupuesto de partículas por frame en Android
