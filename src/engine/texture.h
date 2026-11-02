@@ -50,9 +50,9 @@ struct GlobalShaderParamUse : ShaderParamBinding
             case GL_INT_VEC2:   glUniform2iv_(loc, size, param->ival); break;
             case GL_INT_VEC3:   glUniform3iv_(loc, size, param->ival); break;
             case GL_INT_VEC4:   glUniform4iv_(loc, size, param->ival); break;
-            case GL_FLOAT_MAT2: glUniformMatrix2fv_(loc, 1, GL_FALSE, param->fval); break;
-            case GL_FLOAT_MAT3: glUniformMatrix3fv_(loc, 1, GL_FALSE, param->fval); break;
-            case GL_FLOAT_MAT4: glUniformMatrix4fv_(loc, 1, GL_FALSE, param->fval); break;
+            case GL_FLOAT_MAT2: glUniformMatrix2fv_(loc, size, GL_FALSE, param->fval); break;
+            case GL_FLOAT_MAT3: glUniformMatrix3fv_(loc, size, GL_FALSE, param->fval); break;
+            case GL_FLOAT_MAT4: glUniformMatrix4fv_(loc, size, GL_FALSE, param->fval); break; // size 2 = mat4[2] (multiview)
         }
         version = param->version;
     }
@@ -305,6 +305,8 @@ struct GlobalShaderParam
     void set(const plane &p) { setf(p.x, p.y, p.z, p.offset); }
     void set(const matrix2 &m) { memcpy(resolve()->fval, m.a.v, sizeof(m)); }
     void set(const matrix3 &m) { memcpy(resolve()->fval, m.a.v, sizeof(m)); }
+    // Dos mat4 seguidas (uniform mat4 x[2], una por vista multiview): 32 floats justos.
+    void set2(const matrix4 &a, const matrix4 &b) { GlobalShaderParamState *g = resolve(); memcpy(g->fval, a.a.v, 16*sizeof(float)); memcpy(g->fval + 16, b.a.v, 16*sizeof(float)); }
     void set(const matrix4 &m) { memcpy(resolve()->fval, m.a.v, sizeof(m)); }
 
     template<class T>

@@ -105,6 +105,7 @@ typedef struct {
     XrSwapchainImageOpenGLESKHR* ColorSwapChainImage;
     GLuint* DepthBuffers;
     GLuint* FrameBuffers;
+    bool Multiview; /* swapchain array(2) + GL_OVR_multiview: un pase para los dos ojos */
 } ovrFramebuffer;
 
 /*
@@ -383,6 +384,10 @@ void TBXR_Recenter();
 void TBXR_InitialiseOpenXR();
 void TBXR_WaitForSessionActive();
 void TBXR_InitRenderer();
+/* SauVREngine: multiview activo en esta sesión (decidido en TBXR_InitRenderer). */
+bool TBXR_Multiview(void);
+/* Marca que el arranque llegó a dibujar frames (protección anticrash-loop). */
+void TBXR_MarkBootOk(void);
 void TBXR_EnterVR();
 void TBXR_LeaveVR( );
 void TBXR_GetScreenRes(int *width, int *height);

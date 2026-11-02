@@ -708,6 +708,16 @@ vec worldpos, camdir, camright, camup;
 // project plan's stereo-rendering phase and androidbridge.h's comment on
 // android_sauer_set_eye() for the exact units/convention of each field.
 static vec androidEyeOffsetMeters(0, 0, 0);
+// Multiview (docs/multiview.md): offsets y frustums de cada ojo; la cámara
+// "central" (cammatrix/projmatrix) se usa para cull y CPU, y de ella salen
+// eyecammatrix/eyeprojmatrix para los shaders (camprojmatrix[2]).
+int vrmultiviewactive = 0;
+static vec androidEyeOffsets[2];
+static float androidEyeTans[2][4];
+static matrix4 eyecammatrix[2], eyeprojbase[2], projbase, invprojbase, eyecamprojmatrix[2];
+static bool eyeprojvalid = false;
+int hudmatrixmode = 0; // 0 plano 2D, 1 anclado a la cabeza (desde projmatrix), 2 en el mundo (desde camprojmatrix)
+int vrglerrors = 0; unsigned int vrlastglerror = 0;
 static float androidEyeYaw = 0, androidEyePitch = 0, androidEyeRoll = 0;
 static float androidEyeTanL = -1, androidEyeTanR = 1, androidEyeTanU = 1, androidEyeTanD = -1;
 
@@ -730,6 +740,30 @@ VAR(vrworldscale, 1, 8, 1000);
 
 int androidEyeIndex = 0;
 void android_sauer_set_eye_index(int eye) { androidEyeIndex = eye; }
+
+// skymatrix[2] para rendersky.cpp: proyección de cada ojo sobre la matriz de cielo.
+void getskyprojs(const matrix4 &skymatrix, matrix4 out[2])
+{
+    if(vrmultiviewactive && !drawtex && eyeprojvalid) loopi(2) out[i].mul(eyeprojbase[i], skymatrix);
+    else loopi(2) out[i].mul(projmatrix, skymatrix);
+}
+
+void android_sauer_set_eyes(float dx0, float dy0, float dz0, float dx1, float dy1, float dz1,
+                            float yaw, float pitch, float roll,
+                            float tl0, float tr0, float tu0, float td0,
+                            float tl1, float tr1, float tu1, float td1)
+{
+    androidEyeOffsets[0] = vec(dx0, dy0, dz0);
+    androidEyeOffsets[1] = vec(dx1, dy1, dz1);
+    androidEyeTans[0][0] = tl0; androidEyeTans[0][1] = tr0; androidEyeTans[0][2] = tu0; androidEyeTans[0][3] = td0;
+    androidEyeTans[1][0] = tl1; androidEyeTans[1][1] = tr1; androidEyeTans[1][2] = tu1; androidEyeTans[1][3] = td1;
+    // Cámara central: punto medio y frustum unión (conservador para el cull).
+    androidEyeOffsetMeters = vec(androidEyeOffsets[0]).add(androidEyeOffsets[1]).mul(0.5f);
+    androidEyeYaw = yaw; androidEyePitch = pitch; androidEyeRoll = roll;
+    androidEyeTanL = min(tl0, tl1); androidEyeTanR = max(tr0, tr1);
+    androidEyeTanU = max(tu0, tu1); androidEyeTanD = min(td0, td1);
+    vrmultiviewactive = 1;
+}
 
 void android_sauer_set_eye(float dx, float dy, float dz,
                             float yaw, float pitch, float roll,
@@ -914,6 +948,14 @@ void setcammatrix()
     // real head tracking is added only to the render-camera translation,
     // the same "body root + head-relative offset" split most VR rigs use.
     cammatrix.translate(vec(camera1->o).add(eyeOffsetWorld.mul(float(vrworldscale))).neg());
+    if(vrmultiviewactive) loopi(2)
+    {
+        // ojo = central desplazado por (offset_ojo - offset_medio) en el mundo
+        vec rel = vec(androidEyeOffsets[i]).sub(androidEyeOffsetMeters), relWorld;
+        eyerot.transposedtransformnormal(rel, relWorld);
+        eyecammatrix[i] = cammatrix;
+        eyecammatrix[i].translate(relWorld.mul(float(vrworldscale)).neg());
+    }
     }
     else
     {
@@ -923,6 +965,7 @@ void setcammatrix()
         cammatrix.rotate_around_x(camera1->pitch*-RAD);
         cammatrix.rotate_around_z(camera1->yaw*-RAD);
         cammatrix.translate(vec(camera1->o).neg());
+        loopi(2) eyecammatrix[i] = cammatrix; // pases a textura: las dos vistas iguales
     }
 #else
     cammatrix.rotate_around_y(camera1->roll*RAD);
@@ -967,6 +1010,21 @@ void setcamprojmatrix(bool init = true, bool flush = false)
         invcamprojmatrix.invert(camprojmatrix);
     }
 
+#ifdef __ANDROID__
+    if(vrmultiviewactive)
+    {
+        if(!drawtex && eyeprojvalid) loopi(2)
+        {
+            // misma corrección de projmatrix que lleve el pase (polygon offset, etc.)
+            matrix4 p = eyeprojbase[i];
+            p.d.z += projmatrix.d.z - projbase.d.z;
+            eyecamprojmatrix[i].muld(p, eyecammatrix[i]);
+        }
+        else loopi(2) eyecamprojmatrix[i] = camprojmatrix;
+        { static GlobalShaderParam param("camprojmatrix"); param.set2(eyecamprojmatrix[0], eyecamprojmatrix[1]); }
+    }
+    else
+#endif
     GLOBALPARAM(camprojmatrix, camprojmatrix);
 
     if(fogging)
@@ -989,10 +1047,26 @@ void setcamprojmatrix(bool init = true, bool flush = false)
 matrix4 hudmatrix, hudmatrixstack[64];
 int hudmatrixpos = 0;
 
+static void sethudmatrixparam()
+{
+#ifdef __ANDROID__
+    if(vrmultiviewactive)
+    {
+        matrix4 h[2];
+        if(hudmatrixmode == 1 && eyeprojvalid) loopi(2) { matrix4 t; t.mul(invprojbase, hudmatrix); h[i].mul(eyeprojbase[i], t); }
+        else if(hudmatrixmode == 2) loopi(2) { matrix4 t; t.mul(invcamprojmatrix, hudmatrix); h[i].mul(eyecamprojmatrix[i], t); }
+        else loopi(2) h[i] = hudmatrix;
+        static GlobalShaderParam param("hudmatrix"); param.set2(h[0], h[1]);
+        return;
+    }
+#endif
+    GLOBALPARAM(hudmatrix, hudmatrix);
+}
+
 void resethudmatrix()
 {
     hudmatrixpos = 0;
-    GLOBALPARAM(hudmatrix, hudmatrix);
+    sethudmatrixparam();
 }
 
 void pushhudmatrix()
@@ -1003,7 +1077,7 @@ void pushhudmatrix()
 
 void flushhudmatrix(bool flushparams)
 {
-    GLOBALPARAM(hudmatrix, hudmatrix);
+    sethudmatrixparam();
     if(flushparams && Shader::lastshader) Shader::lastshader->flushparams();
 }
 
@@ -2228,6 +2302,15 @@ void gl_drawframe()
     projmatrix.frustum(nearplane*androidEyeTanL, nearplane*androidEyeTanR,
                         nearplane*androidEyeTanD, nearplane*androidEyeTanU,
                         nearplane, farplane);
+    if(vrmultiviewactive)
+    {
+        projbase = projmatrix;
+        invprojbase.invert(projmatrix);
+        loopi(2) eyeprojbase[i].frustum(nearplane*androidEyeTans[i][0], nearplane*androidEyeTans[i][1],
+                                       nearplane*androidEyeTans[i][3], nearplane*androidEyeTans[i][2],
+                                       nearplane, farplane);
+        eyeprojvalid = true;
+    }
 #else
     projmatrix.perspective(fovy, aspect, nearplane, farplane);
 #endif
@@ -2649,6 +2732,15 @@ VARP(vrstats, 0, 1, 2);
 #ifdef __ANDROID__
 // Telemetría UDP al PC (serve.mjs la recoge): 0 no, 1 una línea por segundo.
 VARP(vrtelemetry, 0, 1, 1);
+// Multiview (un pase para los dos ojos). Cambia al reiniciar: el glue lee
+// vrmultiview.txt en el almacenamiento interno antes de crear el renderer.
+static void writevrmultiviewflag();
+VARFP(vrmultiview, 0, 1, 1, writevrmultiviewflag());
+static void writevrmultiviewflag()
+{
+    FILE *f = fopen("vrmultiview.txt", "w");
+    if(f) { fputs(vrmultiview ? "1" : "0", f); fclose(f); }
+}
 #endif
 // Tamaño del panel: 1 = misma escala que el HUD de juego (h/1800); 1.5 por defecto para VR.
 FVARP(vrstatsscale, 0.5f, 1.5f, 4.0f);
@@ -2714,6 +2806,7 @@ VAR(vrhuddist, 2, 8, 200);
 // frame).
 void androidsethudmatrixheadlocked(int w, int h)
 {
+    hudmatrixmode = 1;
     float s = vrhudscale/100.0f;
     float halfw = s*vrhuddist*(androidEyeTanR - androidEyeTanL)*0.5f;
     float halfh = s*vrhuddist*(androidEyeTanU - androidEyeTanD)*0.5f;
@@ -2726,7 +2819,9 @@ void androidsethudmatrixheadlocked(int w, int h)
 
 void gl_drawhud()
 {
+    hudmatrixmode = 0;
     g3d_render();
+    hudmatrixmode = 0;
 
     int w = screenw, h = screenh;
     if(forceaspect) w = int(ceil(h*forceaspect));
@@ -2915,12 +3010,13 @@ void gl_drawhud()
                 {
                     lasttelemetry = totalmillis;
                     extern int androidEyeIndex;
-                    char tl[1024]; formatstring(tl, "sauvr map=%s fps=%d ms=%d best=%d worst=%d tris=%dk verts=%dk draw=%d lotes=%d va=%d gpu=%.1f comp=%.1f cpu=%.1f gpuutil=%.0f cpuutil=%.0f cpuworst=%.0f stale=%d lat=%.0f hz=%.0f fov=%d pvs=%d pvsbg=%d dyn=%d fovn=%d",
+                    char tl[1024]; formatstring(tl, "sauvr map=%s fps=%d ms=%d best=%d worst=%d tris=%dk verts=%dk draw=%d lotes=%d va=%d gpu=%.1f comp=%.1f cpu=%.1f gpuutil=%.0f cpuutil=%.0f cpuworst=%.0f stale=%d lat=%.0f hz=%.0f fov=%d pvs=%d pvsbg=%d dyn=%d fovn=%d mv=%d glerr=%d gllast=%x",
                         game::getclientmap(), fps, ms, bestdiff, worstdiff, tris, verts, calls, batches, allocva,
                         havevr ? vm.appGpuMs : -1.0f, havevr ? vm.compGpuMs : -1.0f, havevr ? vm.appCpuMs : -1.0f,
                         havevr ? vm.gpuUtil : -1.0f, havevr ? vm.cpuUtilAvg : -1.0f, havevr ? vm.cpuUtilWorst : -1.0f,
                         havevr ? vm.droppedFrames : -1, havevr ? vm.latencyMs : -1.0f, havevr ? vm.refreshHz : -1.0f,
-                        havevr ? vm.foveationLevel : -1, getnumviewcells(), pvsbgprogress(), game::numdynents(), androidEyeIndex);
+                        havevr ? vm.foveationLevel : -1, getnumviewcells(), pvsbgprogress(), game::numdynents(), androidEyeIndex, vrmultiviewactive, vrglerrors, vrlastglerror);
+                    vrglerrors = 0;
                     float gwait = 0, gsubmit = 0, gtotal = 0; int gframes = android_vr_get_frametimes(&gwait, &gsubmit, &gtotal);
                     int pf = max(vrprofframes, 1);
                     char tp[512]; formatstring(tp, " frames=%d total=%.1f wait=%.1f submit=%.1f tick=%.2f cull=%.2f geom=%.2f models=%.2f refl=%.2f water=%.2f parts=%.2f hud=%.2f",
@@ -2986,7 +3082,7 @@ void gl_drawhud()
 
         rendertexturepanel(w, h);
 #ifdef __ANDROID__
-        if(vrheadlockhud) pophudmatrix();
+        if(vrheadlockhud) { pophudmatrix(); hudmatrixmode = 0; }
 #endif
     }
 

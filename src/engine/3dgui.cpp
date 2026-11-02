@@ -1012,6 +1012,9 @@ struct gui : g3d_gui
                 light.mul(1.0f + max(intensity, 0.0f));
             }
 
+#ifdef __ANDROID__
+            { extern int hudmatrixmode; hudmatrixmode = gui2d ? 0 : 2; }
+#endif
             resethudmatrix();
             hudshader->set();
 

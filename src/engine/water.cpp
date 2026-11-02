@@ -967,6 +967,7 @@ void drawreflections()
     if((editmode && showmat && !drawtex) || drawtex == DRAWTEX_MINIMAP) return;
 #ifdef __ANDROID__
     if(vrsharereflections && androidEyeIndex > 0 && !drawtex) return;
+    { extern int vrmultiviewactive; if(vrmultiviewactive) return; } // TODO multiview: reflejos a textura array (docs/multiview.md, paso 3)
 #endif
 
     static int lastdrawn = 0;

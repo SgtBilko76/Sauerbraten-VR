@@ -672,6 +672,7 @@ void setupscreen()
     // plan's Phase 4. Just pick up the per-eye buffer size it already
     // knows.
     android_get_eye_size(&screenw, &screenh);
+    { extern int vrmultiviewactive; vrmultiviewactive = android_vr_multiview(); }
     return;
 #else
     if(glcontext)
@@ -1179,6 +1180,11 @@ void android_sauer_drawframe(void)
 void android_sauer_endframe(void)
 {
     if(minimized) return;
+    {
+        // Errores GL del frame → telemetría (glerr=, gllast=). Barato: una llamada por frame.
+        extern int vrglerrors; extern unsigned int vrlastglerror;
+        for(GLenum e; (e = glGetError()) != GL_NO_ERROR; ) { vrglerrors++; vrlastglerror = e; }
+    }
     swapbuffers();
     renderedframe = inbetweenframes = true;
 }

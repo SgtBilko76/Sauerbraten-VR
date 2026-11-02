@@ -104,9 +104,49 @@ static void showglslinfo(GLenum type, GLuint obj, const char *name, const char *
     }
 }
 
+#ifdef __ANDROID__
+// Multiview (docs/multiview.md): cada matriz de vista pasa a ser un array de 2
+// indexado por gl_ViewID_OVR. Reescritura textual al compilar: "uniform mat4 X;"
+// -> "uniform mat4 X[2];" y el resto de usos de X -> "X[gl_ViewID_OVR]".
+static bool isidentchar(char c) { return isalnum((uchar)c) || c == '_'; }
+static void rewritemultiview(vector<char> &out, const char *src)
+{
+    static const char * const names[] = { "camprojmatrix", "skymatrix", "hudmatrix" };
+    const char *p = src;
+    while(*p)
+    {
+        bool done = false;
+        if(isidentchar(*p) && (p == src || !isidentchar(p[-1]))) loopi(3)
+        {
+            const char *n = names[i]; int len = strlen(n);
+            if(strncmp(p, n, len) || isidentchar(p[len])) continue;
+            // ¿declaración "uniform mat4 X;"?
+            const char *q = p + len; while(*q == ' ' || *q == '\t') q++;
+            bool decl = false;
+            if(*q == ';')
+            {
+                const char *b = p; while(b > src && (b[-1] == ' ' || b[-1] == '\t')) b--;
+                decl = b - src >= 4 && !strncmp(b - 4, "mat4", 4);
+            }
+            loopj(len) out.add(n[j]);
+            if(decl) { out.add('['); out.add('2'); out.add(']'); }
+            else if(*q != '[') { const char *idx = "[gl_ViewID_OVR]"; while(*idx) out.add(*idx++); }
+            p += len; done = true; break;
+        }
+        if(!done) out.add(*p++);
+    }
+    out.add('\0');
+}
+#endif
+
 static void compileglslshader(GLenum type, GLuint &obj, const char *def, const char *name, bool msg = true) 
 {
     const char *source = def + strspn(def, " \t\r\n");
+#ifdef __ANDROID__
+    extern int vrmultiviewactive;
+    vector<char> mvsource;
+    if(vrmultiviewactive) { rewritemultiview(mvsource, source); source = mvsource.getbuf(); }
+#endif
     const char *parts[16];
     int numparts = 0;
 #ifdef __ANDROID__
@@ -120,6 +160,9 @@ static void compileglslshader(GLenum type, GLuint &obj, const char *def, const c
     char glesheader[32];
     formatstring(glesheader, "#version %d es\n", glslversion);
     parts[numparts++] = glesheader;
+    if(vrmultiviewactive) parts[numparts++] = type == GL_VERTEX_SHADER ?
+        "#extension GL_OVR_multiview2 : require\nlayout(num_views = 2) in;\n" :
+        "#extension GL_OVR_multiview2 : require\n";
 #else
     static const struct { int version; const char * const header; } glslversions[] =
     {

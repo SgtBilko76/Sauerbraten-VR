@@ -483,6 +483,11 @@ void android_vr_telemetry(const char *line)
     VrTelemetry_Send(line);
 }
 
+int android_vr_multiview(void)
+{
+    return TBXR_Multiview() ? 1 : 0;
+}
+
 void *AppThreadFunction(void *parm)
 {
     gAppThread = (ovrAppThread *)parm;
@@ -537,6 +542,26 @@ void *AppThreadFunction(void *parm)
 
         android_sauer_tick();
 
+        if (TBXR_Multiview()) {
+            /* Un solo pase: el motor recibe los dos ojos y el shader elige la
+             * vista con gl_ViewID_OVR (ver docs/multiview.md). */
+            TBXR_prepareEyeBuffer(0);
+            if (gAppState.FrameState.shouldRender) {
+                float d[2][3], t[2][4];
+                for (int e = 0; e < 2; e++) {
+                    XrPosef hfe = gAppState.Projections[e].pose;
+                    XrFovf f = gAppState.Projections[e].fov;
+                    d[e][0] = -hfe.position.x; d[e][1] = -hfe.position.z; d[e][2] = hfe.position.y;
+                    t[e][0] = tanf(f.angleLeft); t[e][1] = tanf(f.angleRight); t[e][2] = tanf(f.angleUp); t[e][3] = tanf(f.angleDown);
+                }
+                android_sauer_set_eye_index(0);
+                android_sauer_set_eyes(d[0][0], d[0][1], d[0][2], d[1][0], d[1][1], d[1][2],
+                    hmdorientation[1], hmdorientation[0], hmdorientation[2],
+                    t[0][0], t[0][1], t[0][2], t[0][3], t[1][0], t[1][1], t[1][2], t[1][3]);
+                android_sauer_drawframe();
+            }
+            TBXR_finishEyeBuffer(0);
+        } else
         for (int eye = 0; eye < ovrMaxNumEyes; eye++) {
             TBXR_prepareEyeBuffer(eye);
             if (gAppState.FrameState.shouldRender) {
@@ -605,6 +630,7 @@ void *AppThreadFunction(void *parm)
 
         android_sauer_endframe();
 
+        { static int vrBootFrames = 0; if (++vrBootFrames == 100) TBXR_MarkBootOk(); }
         double t2 = nowms();
         TBXR_submitFrame();
         double t3 = nowms(); vrGlueSubmit += t3 - t2; vrGlueTotal += t3 - vrFrameStart; vrFrameStart = t3; vrGlueFrames++;

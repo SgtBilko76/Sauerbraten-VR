@@ -357,7 +357,15 @@ static void drawfogdome(int farplane)
     skymatrix.settranslation(vec(cammatrix.c).mul(farplane*fogdomeheight*0.5f));
     skymatrix.scale(farplane/2, farplane/2, farplane*(0.5f - fogdomeheight*0.5f));
     skyprojmatrix.mul(projmatrix, skymatrix);
+#ifdef __ANDROID__
+    { extern void getskyprojs(const matrix4 &, matrix4 *); matrix4 sm[2]; getskyprojs(skymatrix, sm); LOCALPARAMV(skymatrix, sm, 2); }
+#else
+    #ifdef __ANDROID__
+    { extern void getskyprojs(const matrix4 &, matrix4 *); matrix4 sm[2]; getskyprojs(skymatrix, sm); LOCALPARAMV(skymatrix, sm, 2); }
+    #else
     LOCALPARAM(skymatrix, skyprojmatrix);
+    #endif
+#endif
 
     fogdome::draw();
 
@@ -421,7 +429,15 @@ static void drawatmosphere(int w, float z1clip = 0.0f, float z2clip = 1.0f, int 
     matrix4 skymatrix = cammatrix, skyprojmatrix;
     skymatrix.settranslation(0, 0, 0);
     skyprojmatrix.mul(projmatrix, skymatrix);
+#ifdef __ANDROID__
+    { extern void getskyprojs(const matrix4 &, matrix4 *); matrix4 sm[2]; getskyprojs(skymatrix, sm); LOCALPARAMV(skymatrix, sm, 2); }
+#else
+    #ifdef __ANDROID__
+    { extern void getskyprojs(const matrix4 &, matrix4 *); matrix4 sm[2]; getskyprojs(skymatrix, sm); LOCALPARAMV(skymatrix, sm, 2); }
+    #else
     LOCALPARAM(skymatrix, skyprojmatrix);
+    #endif
+#endif
 
     // optical depth scales for 3 different shells of atmosphere - air, haze, ozone
     const float earthradius = 6371e3f, earthairheight = 8.4e3f, earthhazeheight = 1.25e3f, earthozoneheight = 50e3f;
@@ -662,7 +678,11 @@ void drawskybox(int farplane, bool limited, bool force)
         skymatrix.settranslation(0, 0, 0);
         skymatrix.rotate_around_z((spinsky*lastmillis/1000.0f+yawsky)*-RAD);
         skyprojmatrix.mul(projmatrix, skymatrix);
+        #ifdef __ANDROID__
+        { extern void getskyprojs(const matrix4 &, matrix4 *); matrix4 sm[2]; getskyprojs(skymatrix, sm); LOCALPARAMV(skymatrix, sm, 2); }
+        #else
         LOCALPARAM(skymatrix, skyprojmatrix);
+        #endif
 
         drawenvbox(farplane/2, skyclip, topclip, yawskyfaces(renderedskyfaces, yawsky, spinsky), sky);
     }
@@ -704,7 +724,11 @@ void drawskybox(int farplane, bool limited, bool force)
             skymatrix.settranslation(0, 0, 0);
             skymatrix.rotate_around_z((spinclouds*lastmillis/1000.0f+yawclouds)*-RAD);
             skyprojmatrix.mul(projmatrix, skymatrix);
+            #ifdef __ANDROID__
+            { extern void getskyprojs(const matrix4 &, matrix4 *); matrix4 sm[2]; getskyprojs(skymatrix, sm); LOCALPARAMV(skymatrix, sm, 2); }
+            #else
             LOCALPARAM(skymatrix, skyprojmatrix);
+            #endif
 
             drawenvbox(farplane/2, skyclip ? skyclip : cloudclip, topclip, yawskyfaces(renderedskyfaces, yawclouds, spinclouds), clouds);
 
@@ -726,7 +750,11 @@ void drawskybox(int farplane, bool limited, bool force)
             skymatrix.settranslation(0, 0, 0);
             skymatrix.rotate_around_z((spincloudlayer*lastmillis/1000.0f+yawcloudlayer)*-RAD);
             skyprojmatrix.mul(projmatrix, skymatrix);
+            #ifdef __ANDROID__
+            { extern void getskyprojs(const matrix4 &, matrix4 *); matrix4 sm[2]; getskyprojs(skymatrix, sm); LOCALPARAMV(skymatrix, sm, 2); }
+            #else
             LOCALPARAM(skymatrix, skyprojmatrix);
+            #endif
 
             drawenvoverlay(farplane/2, cloudoverlay, cloudoffsetx + cloudscrollx * lastmillis/1000.0f, cloudoffsety + cloudscrolly * lastmillis/1000.0f);
 

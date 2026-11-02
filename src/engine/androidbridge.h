@@ -57,6 +57,14 @@ void android_vr_telemetry(const char *line);
 /* Ojo que se está dibujando (0 izquierdo, 1 derecho); lo pone el bucle VR antes de
  * cada android_sauer_drawframe(). Lo usan los pases que se comparten entre ojos. */
 void android_sauer_set_eye_index(int eye);
+/* Multiview: los dos ojos de golpe (offsets cabeza→ojo en ejes de Sauerbraten,
+ * orientación común y tan de cada frustum). El motor dibuja una vez. */
+void android_sauer_set_eyes(float dx0, float dy0, float dz0, float dx1, float dy1, float dz1,
+                            float yaw, float pitch, float roll,
+                            float tl0, float tr0, float tu0, float td0,
+                            float tl1, float tr1, float tu1, float td1);
+/* 1 si el glue creó la swapchain en array y espera shaders multiview. */
+int android_vr_multiview(void);
 /* Tiempos medios por frame (ms) del bucle VR desde la última llamada: espera en
  * xrWaitFrame (TBXR_FrameSetup), xrEndFrame (TBXR_submitFrame) y frame completo.
  * Devuelve el número de frames acumulados y pone los acumuladores a cero. */
