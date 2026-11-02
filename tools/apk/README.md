@@ -124,3 +124,17 @@ Cada segundo escriben `sim t= map= cn= rtt= loss= tx= rx= pos= …` en
 Medido en el PC: ~1 kB/s de subida y ~2 kB/s de bajada por cliente, 22 ms de RTT.
 Trampa: `ai::navigate` solo asigna nodos si algún jugador tiene `aitype != AI_NONE`,
 por eso el simulado se marca como AI_BOT.
+
+## Anfitrión de IA (los bots del servidor se piensan en el PC)
+
+```
+npm run server:lan                       # server-init.cfg lleva adminpass y serveraihost 1
+npm run aihost:lan -- --bots 16          # headless admin+espectador: el servidor le asigna todos los bots
+npm run sim:lan -- --n 4                 # (opcional) clientes de carga
+```
+
+Con `serveraihost 1`, si hay un cliente con privilegio de admin, solo los admins
+son dueños válidos de bots (`validaiclient` en aiman.h) y al llegar uno se
+reasignan los que tuviera cualquier otro cliente. El visor nunca piensa bots.
+Medido: 16 bots en el anfitrión cuestan 0,3 ms por frame; cada cliente recibe
+~11 kB/s con 16 bots + 4 jugadores. Log: `dist/aihost/log.txt` (`aihost bots= owned= ai_ms=`).

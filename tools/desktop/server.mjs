@@ -23,6 +23,7 @@ fs.mkdirSync(home, { recursive: true });
 // server-init.cfg: sin rotación de mapas el servidor arranca con mapa vacío (rotatemap →
 // changemap("")) y el visor entra "a la nada". Se regenera en cada arranque.
 const maps = opt('--maps', 'duel7 ruebli');
+const adminpass = opt('--adminpass', 'sauvr'); // la usa aihost.mjs (setmaster) para ser dueño de los bots
 fs.writeFileSync(path.join(home, 'server-init.cfg'), [
   '// generado por tools/desktop/server.mjs',
   `serverdesc "${name}"`,
@@ -30,6 +31,8 @@ fs.writeFileSync(path.join(home, 'server-init.cfg'), [
   `maprotation "ffa" "${maps}"`,
   `maprotation "ctf" "${maps.split(/\s+/).filter((m) => m !== 'duel7').join(' ') || maps}"`,
   'serverbotlimit 32',
+  `adminpass "${adminpass}"`,
+  'serveraihost 1',
   '',
 ].join('\n'));
 

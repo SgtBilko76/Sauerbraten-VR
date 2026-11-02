@@ -4,6 +4,11 @@ namespace aiman
     bool dorefresh = false, botbalance = true;
     VARN(serverbotlimit, botlimit, 0, 8, MAXBOTS);
     VAR(serverbotbalance, 0, 1, 1);
+    // SauVREngine: con serveraihost 1, si hay clientes con privilegio de admin
+    // (el headless "aihost" de docs/servidor-dedicado.md) solo ellos piensan bots.
+    VAR(serveraihost, 0, 1, 1);
+    static inline bool isaihost(clientinfo *ci) { return ci->privilege >= PRIV_ADMIN && ci->state.aitype == AI_NONE && ci->clientnum >= 0; }
+    static inline bool aihostpresent() { if(!serveraihost) return false; loopv(clients) if(isaihost(clients[i])) return true; return false; }
 
     void calcteams(vector<teamscore> &teams)
     {
@@ -65,6 +70,7 @@ namespace aiman
 
     static inline bool validaiclient(clientinfo *ci)
     {
+        if(aihostpresent() && !isaihost(ci)) return false;
         return ci->clientnum >= 0 && ci->state.aitype == AI_NONE && (ci->state.state!=CS_SPECTATOR || ci->local || (ci->privilege && !ci->warned));
     }
 
@@ -206,6 +212,8 @@ namespace aiman
 	void checksetup()
 	{
 	    if(m_teammode && botbalance) balanceteams();
+	    // bots en manos de clientes que ya no son dueños válidos (llegó un anfitrión): reasignar
+	    loopv(clients) { clientinfo *ci = clients[i]; if(ci->bots.length() && !validaiclient(ci)) removeai(ci); }
 		loopvrev(bots) if(bots[i]) reinitai(bots[i]);
 	}
 

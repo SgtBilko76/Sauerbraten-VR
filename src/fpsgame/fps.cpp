@@ -1,7 +1,7 @@
 #include "game.h"
 
 // SauVREngine: conexión del cliente (engine/client.cpp) para las estadísticas del jugador simulado
-extern ENetPeer *curpeer; extern ENetHost *clienthost;
+extern ENetPeer *curpeer; extern ENetHost *clienthost; extern int getclockmillis();
 
 namespace game
 {
@@ -244,6 +244,21 @@ namespace game
     // Cada segundo escribe una línea "sim ..." en el log (-g) que lee tools/desktop/sim.mjs.
     VAR(simplayer, 0, 0, 1);
     VAR(simskill, 1, 60, 100);
+    // Anfitrión de IA (headless con privilegio de admin): cada segundo "aihost t= bots= ai_ms=".
+    VAR(aihost, 0, 0, 1);
+    static int aihostms = 0, aihostframes = 0;
+    static void updateaihost()
+    {
+        if(!aihost || !connected) return;
+        static int last = 0;
+        if(totalmillis - last < 1000) return;
+        last = totalmillis;
+        int owned = 0, bots = 0;
+        loopv(players) if(players[i]->ai) { bots++; if(players[i]->ownernum == player1->clientnum) owned++; }
+        logoutf("aihost t=%d map=%s cn=%d bots=%d owned=%d ai_ms=%.2f frames=%d rtt=%u", totalmillis/1000, getclientmap(), player1->clientnum, bots, owned,
+            aihostframes ? aihostms/float(aihostframes) : 0.0f, aihostframes, curpeer ? curpeer->roundTripTime : 0);
+        aihostms = aihostframes = 0;
+    }
     static void updatesimplayer()
     {
         if(!simplayer || !connected)
@@ -267,10 +282,10 @@ namespace game
         {
             lastsim = totalmillis;
             uint tx = clienthost ? clienthost->totalSentData : 0, rx = clienthost ? clienthost->totalReceivedData : 0;
-            logoutf("sim t=%d map=%s cn=%d st=%d rtt=%u loss=%.1f tx=%u rx=%u pos=%.0f,%.0f,%.0f node=%d aist=%d mv=%d,%d yaw=%.0f/%.0f frags=%d deaths=%d",
+            logoutf("sim t=%d map=%s cn=%d st=%d rtt=%u loss=%.1f tx=%u rx=%u pos=%.0f,%.0f,%.0f node=%d aist=%d mv=%d,%d yaw=%.0f/%.0f frags=%d deaths=%d owned=%d",
                 totalmillis/1000, getclientmap(), player1->clientnum, player1->state,
                 curpeer ? curpeer->roundTripTime : 0, curpeer ? curpeer->packetLoss*100.0f/ENET_PEER_PACKET_LOSS_SCALE : 0.0f,
-                tx - lasttx, rx - lastrx, player1->o.x, player1->o.y, player1->o.z, player1->lastnode, player1->ai->state.empty() ? -1 : player1->ai->getstate().type, player1->move, player1->strafe, player1->yaw, player1->ai->targyaw, player1->frags, player1->deaths);
+                tx - lasttx, rx - lastrx, player1->o.x, player1->o.y, player1->o.z, player1->lastnode, player1->ai->state.empty() ? -1 : player1->ai->getstate().type, player1->move, player1->strafe, player1->yaw, player1->ai->targyaw, player1->frags, player1->deaths, (int)[]{ int n = 0; loopv(players) if(players[i]->ai && players[i] != player1 && players[i]->ownernum == player1->clientnum) n++; return n; }());
             lasttx = tx; lastrx = rx;
         }
     }
@@ -289,7 +304,12 @@ namespace game
         updateweapons(curtime);
         otherplayers(curtime);
         updatesimplayer();
-        ai::update();
+        {
+            int t0 = aihost ? getclockmillis() : 0;
+            ai::update();
+            if(aihost) { aihostms += getclockmillis() - t0; aihostframes++; }
+        }
+        updateaihost();
         moveragdolls();
         gets2c();
         updatemovables(curtime);
