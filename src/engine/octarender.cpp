@@ -1810,3 +1810,10 @@ void recalc()
 
 COMMAND(recalc, "");
 
+
+// SauVREngine: estadísticas del mapa cargado para elegir/medir mapas desde el PC
+// (tools/desktop): triángulos y vértices del mundo, VAs y lightmaps.
+ICOMMAND(mapstats, "", (), {
+    extern vector<LightMapTexture> lightmaptexs; extern vector<LightMap> lightmaps;
+    conoutf("mapstats wtris=%d wverts=%d va=%d lightmaps=%d lmtex=%d worldsize=%d", wtris, wverts, allocva, lightmaps.length(), lightmaptexs.length(), worldsize);
+});

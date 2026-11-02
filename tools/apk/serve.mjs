@@ -30,7 +30,7 @@ function listApks() {
   return fs
     .readdirSync(dir)
     .filter((f) => f.toLowerCase().endsWith('.apk'))
-    .map((f) => ({ name: f, size: fs.statSync(path.join(dir, f)).size }));
+    .map((f) => { const st = fs.statSync(path.join(dir, f)); return { name: f, size: st.size, mtime: st.mtimeMs }; });
 }
 
 function lanIps() {
@@ -41,15 +41,26 @@ function lanIps() {
   return out;
 }
 
-function index(res, req) {
+// Un solo enlace: la APK más reciente (SauVREngine-latest.apk si existe, si no la
+// de fecha de modificación más nueva). Las anteriores siguen en la carpeta y se
+// pueden bajar por URL, pero no se listan para no confundir en el visor.
+function latestApk() {
   const apks = listApks();
-  const rows = apks.length
-    ? apks
-        .map(
-          (a) =>
-            `<li><a href="/apk/${encodeURIComponent(a.name)}" download>${a.name}</a> <small>(${fmt(a.size)})</small></li>`,
-        )
-        .join('')
+  if (!apks.length) return null;
+  const latest = apks.find((a) => a.name === 'SauVREngine-latest.apk');
+  if (latest) {
+    // nombre con fecha y commit de la build que es (la copia homónima más nueva)
+    const dated = apks.filter((a) => /^SauVREngine-debug-/.test(a.name)).sort((a, b) => b.mtime - a.mtime)[0];
+    return { ...latest, label: dated ? dated.name.replace(/.apk$/, '') : 'última build' };
+  }
+  const newest = apks.sort((a, b) => b.mtime - a.mtime)[0];
+  return { ...newest, label: newest.name.replace(/.apk$/, '') };
+}
+
+function index(res, req) {
+  const a = latestApk();
+  const rows = a
+    ? `<li><a href="/apk/${encodeURIComponent(a.name)}" download>Descargar SauVREngine</a><br><small>${a.label} · ${fmt(a.size)} · ${new Date(a.mtime).toLocaleString()}</small></li>`
     : '<li><em>No hay APKs en la carpeta todavía (descarga en curso o carpeta vacía).</em></li>';
   const html = `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>APKs</title>
@@ -146,5 +157,5 @@ server.listen(port, host, () => {
   console.log('  telemetría: UDP 5231 → GET /telemetry?n=60 y dist/telemetry.log');
   console.log(`  local:  http://localhost:${port}/`);
   for (const ip of lanIps()) console.log(`  red:    http://${ip}:${port}/   (abrir en el navegador del visor)`);
-  for (const a of listApks()) console.log(`  - ${a.name} (${fmt(a.size)})`);
+  { const a = latestApk(); console.log(a ? `  enlace único: ${a.name} → ${a.label} (${fmt(a.size)})` : '  (sin APKs)'); }
 });
