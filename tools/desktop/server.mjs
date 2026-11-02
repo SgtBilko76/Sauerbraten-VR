@@ -20,12 +20,24 @@ const clients = opt('--clients', '16');
 const port = opt('--port', '28785');
 const home = path.join(repo, 'bin64', 'server-home');
 fs.mkdirSync(home, { recursive: true });
+// server-init.cfg: sin rotación de mapas el servidor arranca con mapa vacío (rotatemap →
+// changemap("")) y el visor entra "a la nada". Se regenera en cada arranque.
+const maps = opt('--maps', 'duel7 ruebli');
+fs.writeFileSync(path.join(home, 'server-init.cfg'), [
+  '// generado por tools/desktop/server.mjs',
+  `serverdesc "${name}"`,
+  'maprotationreset',
+  `maprotation "ffa" "${maps}"`,
+  `maprotation "ctf" "${maps.split(/\s+/).filter((m) => m !== 'duel7').join(' ') || maps}"`,
+  'serverbotlimit 32',
+  '',
+].join('\n'));
 
 const ips = [];
 for (const addrs of Object.values(os.networkInterfaces())) for (const a of addrs ?? []) if (a.family === 'IPv4' && !a.internal) ips.push(a.address);
 console.log(`Servidor dedicado "${name}": puerto UDP ${port} (info ${+port + 1}), hasta ${clients} clientes`);
 console.log(`  en el visor: menú principal → "lan connect", o /connect ${ips[0] ?? '<IP>'} ${port}`);
-console.log(`  registro: ${path.join(home, 'server-log.txt')}`);
+console.log(`  registro: ${path.join(home, 'server-log.txt')}; rotación ffa: ${maps}`);
 // -q: home propio (server-init.cfg, log); sin -m: no se registra en el master público.
 const child = spawn(exe, [`-q${home}`, '-gserver-log.txt', `-n${name}`, `-c${clients}`, `-j${port}`, '-m'], { cwd: repo, stdio: 'inherit' });
 child.on('exit', (code) => { console.log(`servidor terminado (${code})`); process.exit(code ?? 0); });
