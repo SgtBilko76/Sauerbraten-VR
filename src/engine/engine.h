@@ -152,9 +152,10 @@ extern void vrprofmark(int phase);
 extern void genpvsbackground(int cellsize);
 extern void checkpvsbackground();
 extern int pvsbgprogress();
+extern int vrmultiviewactive; // 0 en escritorio
+extern int hudmatrixmode;
 #ifdef __ANDROID__
 // multiview (rendergl.cpp): destinos fuera de pantalla como texturas array
-extern int vrmultiviewactive;
 extern bool vrmvcreatearray(GLuint tex, int w, int h, GLenum internalfmt, bool depth, int filter);
 extern void vrmvattach(GLenum attachment, GLuint tex);
 extern void vrmvscratchbind(int size);

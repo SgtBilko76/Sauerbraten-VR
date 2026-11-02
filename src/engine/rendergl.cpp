@@ -960,6 +960,10 @@ bool androidgetaim(vec &pos, vec &dir, float &yaw, float &pitch) { return false;
 void android_sauer_align_spawn_yaw(float spawnyaw) {}
 #endif
 
+#ifndef __ANDROID__
+int vrmultiviewactive = 0, hudmatrixmode = 0; // solo tienen sentido en el visor
+#endif
+
 void setcammatrix()
 {
     // move from RH to Z-up LH quake style worldspace

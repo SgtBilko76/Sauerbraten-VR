@@ -1053,6 +1053,30 @@ COMMANDN(genpvsfile, autopvs, "");
 ICOMMAND(savepvsfile, "", (), intret(savepvsfile() ? 1 : 0));
 ICOMMAND(pvscells, "", (), intret(getnumviewcells()));
 
+// Cámara de prueba sobre la primera superficie de agua del mapa (para comparar
+// capturas del visor y del build de escritorio desde el mismo punto).
+ICOMMAND(watercam, "", (),
+{
+    loopv(valist)
+    {
+        vtxarray *va = valist[i];
+        loopj(va->matsurfs)
+        {
+            materialsurface &m = va->matbuf[j];
+            if((m.material&MATF_VOLUME) != MAT_WATER || m.orient != O_TOP) continue;
+            vec c(m.o.x + m.csize*0.5f, m.o.y + m.rsize*0.5f, m.o.z);
+            vec pos = vec(c).add(vec(0, -28, 70));
+            vec dir = vec(c).sub(pos).normalize();
+            float yaw; float pitch; vectoyawpitch(dir, yaw, pitch);
+            player->o = pos; player->newpos = pos; player->yaw = yaw; player->pitch = pitch; player->roll = 0;
+            player->resetinterp();
+            conoutf("watercam: agua en %.0f %.0f %.0f", c.x, c.y, c.z);
+            return;
+        }
+    }
+    conoutf(CON_WARN, "watercam: el mapa no tiene agua");
+});
+
 // Horneado desde línea de comandos (tools/desktop/bake-pvs.mjs):
 //   sauerbraten.exe -q<home> -x"pvsbake duel7 32"  (cwd = carpeta con data/ y packages/)
 // Carga el mapa, genera el PVS de forma síncrona, guarda <mapa>.pvs y sale.
