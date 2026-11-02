@@ -30,6 +30,31 @@
 #include "VrPerf.h"
 #include "VrTelemetry.h"
 #include <time.h>
+#include <signal.h>
+#include <ucontext.h>
+
+/* ---- Aviso de crash por telemetría: señal, dirección del fallo y PC, antes
+ * de morir. No es async-signal-safe en sentido estricto, pero en la práctica
+ * un sendto desde el handler llega y es la única pista sin logcat. */
+static void vrCrashHandler(int sig, siginfo_t *info, void *uc)
+{
+    char line[256];
+    void *pc = NULL;
+#if defined(__aarch64__)
+    if (uc) pc = (void *)((ucontext_t *)uc)->uc_mcontext.pc;
+#endif
+    snprintf(line, sizeof(line), "sauvr crash sig=%d code=%d addr=%p pc=%p", sig, info ? info->si_code : 0, info ? info->si_addr : NULL, pc);
+    VrTelemetry_Send(line);
+    usleep(200000);
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
+static void vrInstallCrashHandler(void)
+{
+    struct sigaction sa; memset(&sa, 0, sizeof(sa));
+    sa.sa_sigaction = vrCrashHandler; sa.sa_flags = SA_SIGINFO | SA_RESETHAND;
+    sigaction(SIGSEGV, &sa, NULL); sigaction(SIGBUS, &sa, NULL); sigaction(SIGABRT, &sa, NULL); sigaction(SIGFPE, &sa, NULL); sigaction(SIGILL, &sa, NULL);
+}
 
 static double vrGlueWait = 0, vrGlueSubmit = 0, vrGlueTotal = 0; static int vrGlueFrames = 0;
 static double nowms(void) { struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts); return ts.tv_sec * 1000.0 + ts.tv_nsec / 1e6; }
@@ -573,6 +598,8 @@ void *AppThreadFunction(void *parm)
     TBXR_InitRenderer();
     TBXR_InitActions();
     TBXR_WaitForSessionActive();
+    vrInstallCrashHandler();
+    { char bl[128]; snprintf(bl, sizeof(bl), "sauvr boot multiview=%d srgb=%d", TBXR_Multiview() ? 1 : 0, TBXR_SrgbControl() ? 1 : 0); VrTelemetry_Send(bl); }
 
     ALOGV("SauerQuest VR bootstrap: booting engine (%dx%d per eye)",
           (int)gAppState.Width, (int)gAppState.Height);

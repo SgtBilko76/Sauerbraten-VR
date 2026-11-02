@@ -1,6 +1,9 @@
 // worldio.cpp: loading & saving of maps and savegames
 
 #include "engine.h"
+#ifdef __ANDROID__
+#include "androidbridge.h"
+#endif
 
 void validmapname(char *dst, const char *src, const char *prefix = NULL, const char *alt = "untitled", size_t maxlen = 100)
 {
@@ -1096,6 +1099,9 @@ bool load_world(const char *mname, const char *cname)        // still supports a
 {
     int loadingstart = SDL_GetTicks();
     setmapfilenames(mname, cname);
+#ifdef __ANDROID__
+    { defformatstring(tl, "sauvr mapload %s", mname); android_vr_telemetry(tl); }
+#endif
     stream *f = opengzfile(ogzname, "rb");
     if(!f) { conoutf(CON_ERROR, "could not read map %s", ogzname); return false; }
     octaheader hdr;
@@ -1335,6 +1341,9 @@ bool load_world(const char *mname, const char *cname)        // still supports a
     delete f;
 
     conoutf("read map %s (%.1f seconds)", ogzname, (SDL_GetTicks()-loadingstart)/1000.0f);
+#ifdef __ANDROID__
+    { defformatstring(tl, "sauvr mapread %s %.1fs lightmaps=%d pvs=%d", mname, (SDL_GetTicks()-loadingstart)/1000.0f, lightmaps.length(), getnumviewcells()); android_vr_telemetry(tl); }
+#endif
 
     clearmainmenu();
 
