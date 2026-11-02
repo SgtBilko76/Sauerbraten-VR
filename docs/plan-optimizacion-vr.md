@@ -44,6 +44,7 @@ Leído en `android/app/src/main/cpp/vr_glue/` y `src/engine/`:
 | Refresco | `XR_FB_display_refresh_rate` enumerado, 72 Hz | Ok |
 | Métricas | Solo fps del motor; nada de GPU | Añadido en fase 0 |
 | Iluminación | Lightmaps horneados + `maxdynlights 3` | Barato |
+| Color | Swapchain sRGB + motor en gamma = **doble gamma** (sobreexpuesto, tapado con vrgamedim) | Corregido con GL_EXT_sRGB_write_control (8ee148e): coincide con el PC |
 | PVS del mapa | **duel7 no trae PVS** (`numpvs 0`; en upstream solo metl4 lo tiene) | Sin PVS ni oclusión, una pared no oculta nada: se dibuja todo el frustum |
 
 Medición del usuario (2026-11-01, duel7, foveado 3): 41 fps / 23 ms mirando
