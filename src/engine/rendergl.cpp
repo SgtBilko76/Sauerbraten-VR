@@ -741,6 +741,14 @@ VAR(vrworldscale, 1, 8, 1000);
 int androidEyeIndex = 0;
 void android_sauer_set_eye_index(int eye) { androidEyeIndex = eye; }
 
+// camprojmatrix[2] actuales (o la central dos veces si no hay estéreo): para
+// quien compone su MVP en CPU (animmodel.h).
+void geteyecamprojs(matrix4 out[2])
+{
+    if(vrmultiviewactive) loopi(2) out[i] = eyecamprojmatrix[i];
+    else loopi(2) out[i] = camprojmatrix;
+}
+
 // skymatrix[2] para rendersky.cpp: proyección de cada ojo sobre la matriz de cielo.
 void getskyprojs(const matrix4 &skymatrix, matrix4 out[2])
 {

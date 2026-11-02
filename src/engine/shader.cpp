@@ -111,12 +111,12 @@ static void showglslinfo(GLenum type, GLuint obj, const char *name, const char *
 static bool isidentchar(char c) { return isalnum((uchar)c) || c == '_'; }
 static void rewritemultiview(vector<char> &out, const char *src)
 {
-    static const char * const names[] = { "camprojmatrix", "skymatrix", "hudmatrix" };
+    static const char * const names[] = { "camprojmatrix", "skymatrix", "hudmatrix", "modelmatrix" };
     const char *p = src;
     while(*p)
     {
         bool done = false;
-        if(isidentchar(*p) && (p == src || !isidentchar(p[-1]))) loopi(3)
+        if(isidentchar(*p) && (p == src || !isidentchar(p[-1]))) loopi(4)
         {
             const char *n = names[i]; int len = strlen(n);
             if(strncmp(p, n, len) || isidentchar(p[len])) continue;

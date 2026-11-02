@@ -892,11 +892,31 @@ struct animmodel : model
 
             if(!(anim&ANIM_NORENDER))
             {
+#ifdef __ANDROID__
+                // Multiview: la MVP del modelo se calcula por ojo (modelmatrix[2]);
+                // con una sola matriz los modelos salían sin paralaje entre ojos.
+                extern int vrmultiviewactive; extern void geteyecamprojs(matrix4 *);
+                if(vrmultiviewactive && !shadowmapping)
+                {
+                    matrix4 eyes[2], mm[2];
+                    geteyecamprojs(eyes);
+                    loopi(2)
+                    {
+                        mm[i].mul(eyes[i], matrixstack[matrixpos]);
+                        if(model->scale!=1) mm[i].scale(model->scale);
+                        if(!translate.iszero()) mm[i].translate(translate);
+                    }
+                    static GlobalShaderParam param("modelmatrix"); param.set2(mm[0], mm[1]);
+                }
+                else
+#endif
+                {
                 matrix4 modelmatrix;
                 modelmatrix.mul(shadowmapping ? shadowmatrix : camprojmatrix, matrixstack[matrixpos]);
                 if(model->scale!=1) modelmatrix.scale(model->scale);
                 if(!translate.iszero()) modelmatrix.translate(translate);
                 GLOBALPARAM(modelmatrix, modelmatrix);
+                }
 
                 if(!(anim&ANIM_NOSKIN))
                 {
