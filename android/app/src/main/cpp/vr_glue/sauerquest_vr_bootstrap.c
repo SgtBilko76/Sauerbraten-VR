@@ -509,6 +509,7 @@ void android_vr_telemetry(const char *line)
 }
 
 int android_vr_unicast(void) { return VrTelemetry_HaveServer(); }
+#include "VrBuild.h" /* generada por tools/apk/build-apk.mjs en cada build */
 #ifndef SAUVR_VNAME
 #define SAUVR_VNAME "dev"
 #endif

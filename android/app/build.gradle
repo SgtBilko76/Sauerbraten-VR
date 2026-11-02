@@ -49,7 +49,7 @@ android {
                 // See build.gradle's externalNativeBuild.ndkBuild comment
                 // for why (buildStagingDirectory doesn't affect ndk-build's
                 // actual output paths, only CMake's).
-                arguments "V=0", "-j$numProcs", "NDK_OUT=$ndkBuildRoot/obj", "NDK_LIBS_OUT=$ndkBuildRoot/lib", "SAUVR_VNAME=" + (project.hasProperty("vname") ? project.vname : "dev")
+                arguments "V=0", "-j$numProcs", "NDK_OUT=$ndkBuildRoot/obj", "NDK_LIBS_OUT=$ndkBuildRoot/lib"
                 abiFilters 'arm64-v8a'
             }
         }

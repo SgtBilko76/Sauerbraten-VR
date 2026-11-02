@@ -34,6 +34,10 @@ const shaPre = spawnSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: src, en
 const vcode = Math.floor((Date.now() - Date.UTC(2026, 0, 1)) / 60000); // minutos desde 2026-01-01: crece en cada build
 const vname = '0.1.' + vcode + '-' + shaPre;
 console.log('> versionCode ' + vcode + ' versionName ' + vname);
+// Versión visible en el HUD y en la telemetría (sauvr boot/cfg build=): cabecera
+// generada por build, porque ndk-build ignora cambios en -D de la línea de comandos.
+fs.writeFileSync(path.join(androidDir, 'app', 'src', 'main', 'cpp', 'vr_glue', 'VrBuild.h'),
+  '/* generado por tools/apk/build-apk.mjs; no editar ni versionar */\n#define SAUVR_VNAME "' + vname + '"\n');
 const r = spawnSync(gradle, [task, '--no-daemon', '--console=plain', '-Pvcode=' + vcode, '-Pvname=' + vname], { cwd: androidDir, env, stdio: 'inherit', shell: true });
 if (r.status !== 0) { console.error(`gradle falló (${r.status})`); process.exit(r.status ?? 1); }
 
