@@ -11,6 +11,8 @@
 #include <net/if.h>
 #include <unistd.h>
 #include <time.h>
+#include <fcntl.h>
+#include <errno.h>
 
 #include "VrCommon.h"
 #include "VrTelemetry.h"
@@ -21,6 +23,42 @@ static int sock = -1;
 static struct sockaddr_in targets[4];
 static int numtargets = 0;
 static time_t lastscan = 0;
+/* Unicast: cuando el servidor contesta "sauvrack" a una línea de telemetría,
+ * guardamos su dirección y todo (telemetría y capturas) va directo a ella.
+ * El broadcast Wi-Fi va a la velocidad base de la red y pierde casi todo
+ * cuando mandamos una captura de 1 MB. */
+static struct sockaddr_in serverAddr;
+static int haveServer = 0;
+static time_t lastAck = 0;
+
+static void pollAck(void)
+{
+    char buf[64];
+    struct sockaddr_in from; socklen_t fl = sizeof(from);
+    for (;;) {
+        ssize_t n = recvfrom(sock, buf, sizeof(buf) - 1, MSG_DONTWAIT, (struct sockaddr *)&from, &fl);
+        if (n <= 0) break;
+        buf[n] = 0;
+        if (!strncmp(buf, "sauvrack", 8)) {
+            if (!haveServer) ALOGV("telemetría: servidor en %s", inet_ntoa(from.sin_addr));
+            serverAddr = from; haveServer = 1; lastAck = time(NULL);
+        }
+    }
+    /* sin acuses en 15 s: volver al broadcast (el PC cambió de IP o se cerró) */
+    if (haveServer && time(NULL) - lastAck > 15) haveServer = 0;
+}
+
+static void ensureSocket(void)
+{
+    if (sock >= 0) return;
+    sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sock < 0) return;
+    int on = 1;
+    setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &on, sizeof(on));
+    fcntl(sock, F_SETFL, fcntl(sock, F_GETFL, 0) | O_NONBLOCK);
+}
+
+int VrTelemetry_HaveServer(void) { return haveServer; }
 
 static void scanInterfaces(void)
 {
@@ -44,12 +82,9 @@ static void scanInterfaces(void)
 
 void VrTelemetry_SendRaw(const void *data, size_t len)
 {
-    if (sock < 0) {
-        sock = socket(AF_INET, SOCK_DGRAM, 0);
-        if (sock < 0) return;
-        int on = 1;
-        setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &on, sizeof(on));
-    }
+    ensureSocket();
+    if (sock < 0) return;
+    if (haveServer) { sendto(sock, data, len, 0, (struct sockaddr *)&serverAddr, sizeof(serverAddr)); return; }
     time_t now = time(NULL);
     if (numtargets == 0 || now - lastscan >= 10) { scanInterfaces(); lastscan = now; }
     for (int i = 0; i < numtargets; i++)
@@ -58,15 +93,13 @@ void VrTelemetry_SendRaw(const void *data, size_t len)
 
 void VrTelemetry_Send(const char *line)
 {
-    if (sock < 0) {
-        sock = socket(AF_INET, SOCK_DGRAM, 0);
-        if (sock < 0) return;
-        int on = 1;
-        setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &on, sizeof(on));
-    }
+    ensureSocket();
+    if (sock < 0) return;
+    pollAck();
+    size_t len = strlen(line);
+    if (haveServer) { sendto(sock, line, len, MSG_DONTWAIT, (struct sockaddr *)&serverAddr, sizeof(serverAddr)); return; }
     time_t now = time(NULL);
     if (numtargets == 0 || now - lastscan >= 10) { scanInterfaces(); lastscan = now; }
-    size_t len = strlen(line);
     for (int i = 0; i < numtargets; i++)
         sendto(sock, line, len, MSG_DONTWAIT, (struct sockaddr *)&targets[i], sizeof(targets[i]));
 }

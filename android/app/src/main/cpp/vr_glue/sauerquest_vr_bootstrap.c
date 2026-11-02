@@ -483,6 +483,8 @@ void android_vr_telemetry(const char *line)
     VrTelemetry_Send(line);
 }
 
+int android_vr_unicast(void) { return VrTelemetry_HaveServer(); }
+
 int android_vr_multiview(void)
 {
     return TBXR_Multiview() ? 1 : 0;
@@ -509,7 +511,7 @@ static void *vrCaptureSend(void *arg)
         pkt[5] = i & 0xff; pkt[6] = (i >> 8) & 0xff;
         memcpy(pkt + 7, job->rgb + off, len);
         VrTelemetry_SendRaw(pkt, 7 + len);
-        usleep(400); /* ~2,4 MB/s: la Wi-Fi lo aguanta sin perder trozos */
+        usleep(VrTelemetry_HaveServer() ? 1200 : 4000); /* ~1 MB/s en unicast; broadcast mucho más lento */
     }
     free(job->rgb); free(job);
     return NULL;

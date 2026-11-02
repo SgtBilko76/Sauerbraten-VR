@@ -111,6 +111,8 @@ const udp = dgram.createSocket({ type: 'udp4', reuseAddr: true });
 udp.on('message', (msg, rinfo) => {
   if (capture.binary(msg)) return;
   if (capture.text(msg.toString(), rinfo)) return;
+  // Acuse: el visor pasa a mandar en unicast a esta IP (ver VrTelemetry.c).
+  if (msg.toString().startsWith('sauvr ')) udp.send('sauvrack', rinfo.port, rinfo.address);
   const line = `${new Date().toISOString().slice(11, 19)} ${rinfo.address} ${msg.toString().trim()}`;
   telemetry.push(line);
   if (telemetry.length > 3600) telemetry.shift();
