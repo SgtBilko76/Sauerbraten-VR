@@ -256,16 +256,18 @@ namespace game
         if(totalmillis - last < 1000) return;
         last = totalmillis;
         int owned = 0, bots = 0;
-        loopv(players) if(players[i]->ai) { bots++; if(players[i]->ownernum == player1->clientnum) owned++; }
-        logoutf("aihost t=%d map=%s cn=%d bots=%d owned=%d ai_ms=%.2f frames=%d rtt=%u", totalmillis/1000, getclientmap(), player1->clientnum, bots, owned,
+        int allbots = 0; loopv(players) { if(players[i]->aitype != AI_NONE) allbots++; if(players[i]->ai) { bots++; if(players[i]->ownernum == player1->clientnum) owned++; } }
+        logoutf("aihost t=%d map=%s cn=%d priv=%d allbots=%d bots=%d owned=%d ai_ms=%.2f frames=%d rtt=%u", totalmillis/1000, getclientmap(), player1->clientnum, player1->privilege, allbots, bots, owned,
             aihostframes ? aihostms/float(aihostframes) : 0.0f, aihostframes, curpeer ? curpeer->roundTripTime : 0);
         aihostms = aihostframes = 0;
         // reponer bots (hasta 8 por segundo) cuando faltan: tras un cambio de mapa o al arrancar
         static int lastadd = 0;
-        if(aihostbots > bots && maptime && lastmillis - maptime > 2000 && totalmillis - lastadd >= 1000)
+        if(aihostbots > allbots && player1->privilege >= PRIV_ADMIN && maptime && lastmillis - maptime > 2000 && totalmillis - lastadd >= 1000)
         {
             lastadd = totalmillis;
-            loopi(min(aihostbots - bots, 8)) addmsg(N_ADDBOT, "ri", aihostskill);
+            int want = min(aihostbots - allbots, 8);
+            conoutf("aihost: pido %d bots (hay %d, quiero %d, priv %d, maptime %d)", want, allbots, aihostbots, player1->privilege, lastmillis - maptime);
+            loopi(want) addmsg(N_ADDBOT, "ri", aihostskill);
         }
     }
     static void updatesimplayer()
