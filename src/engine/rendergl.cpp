@@ -440,7 +440,11 @@ void gl_checkextensions()
     {
         hasTF = true;
         if(glversion < 300 && dbgexts) conoutf(CON_INIT, "Using GL_ARB_texture_float extension.");
+#ifndef __ANDROID__
+        // En Android no: encendía el shadowmap dinámico (sombras proyectadas de
+        // modelos) que shadowmap.cpp deja apagado a propósito por coste de GPU.
         shadowmap = 1;
+#endif
         extern int smoothshadowmappeel;
         smoothshadowmappeel = 1;
     }
@@ -3220,8 +3224,8 @@ void gl_drawhud()
                         extern int shaderdetail, bumpmodels, texcompress, maxtexsize, texreduce, aniso, trilinear, glslversion, hwtexsize; extern int vrenvprobe[4];
                         char fl[700]; int nf = getfailedshaders(fl, sizeof(fl));
                         char cl[1024];
-                        formatstring(cl, "sauvr cfg shaderdetail=%d bumpmodels=%d texcompress=%d maxtexsize=%d texreduce=%d aniso=%d trilinear=%d glsl=%d hwtex=%d env=%d/%d/%d n=%d shfail=%d: %s",
-                            shaderdetail, bumpmodels, texcompress, maxtexsize, texreduce, aniso, trilinear, glslversion, hwtexsize, vrenvprobe[0], vrenvprobe[1], vrenvprobe[2], vrenvprobe[3], nf, fl);
+                        formatstring(cl, "sauvr cfg shaderdetail=%d bumpmodels=%d texcompress=%d maxtexsize=%d texreduce=%d aniso=%d trilinear=%d glsl=%d hwtex=%d env=%d/%d/%d n=%d sm=%d blobs=%d shfail=%d: %s",
+                            shaderdetail, bumpmodels, texcompress, maxtexsize, texreduce, aniso, trilinear, glslversion, hwtexsize, vrenvprobe[0], vrenvprobe[1], vrenvprobe[2], vrenvprobe[3], shadowmap, showblobs, nf, fl);
                         android_vr_telemetry(cl);
                     }
                 }

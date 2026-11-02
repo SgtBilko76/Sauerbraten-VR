@@ -837,8 +837,18 @@ static inline int cullmodel(model *m, const vec &center, float radius, int flags
     return 0;
 }
 
+#ifdef __ANDROID__
+VARP(vrplayershadow, 0, 0, 1);
+#endif
+
 void rendermodel(entitylight *light, const char *mdl, int anim, const vec &o, float yaw, float pitch, int flags, dynent *d, modelattach *a, int basetime, int basetime2, float trans)
 {
+#ifdef __ANDROID__
+    // VR: ningún elemento del jugador proyecta sombra: ni el arma/brazo en la mano
+    // (MDL_HUD) ni su propio modelo o ragdoll (d == player). vrplayershadow 1 lo
+    // reactiva (pensado para un cuerpo completo con IK más adelante).
+    if(!vrplayershadow && ((flags&MDL_HUD) || (d && d == player))) flags &= ~(MDL_SHADOW|MDL_DYNSHADOW);
+#endif
     if(shadowmapping && !(flags&(MDL_SHADOW|MDL_DYNSHADOW))) return;
     model *m = loadmodel(mdl); 
     if(!m) return;
@@ -1151,7 +1161,7 @@ void renderclient(dynent *d, const char *mdlname, modelattach *attachments, int 
 #ifdef __ANDROID__
     // VR: el propio jugador no lleva sombra (su blob aparecía flotando en los
     // reflejos y bajo la mano); los bots sí.
-    else if(d != player) flags |= MDL_DYNSHADOW;
+    else if(d != player || vrplayershadow) flags |= MDL_DYNSHADOW;
 #else
     else flags |= MDL_DYNSHADOW;
 #endif

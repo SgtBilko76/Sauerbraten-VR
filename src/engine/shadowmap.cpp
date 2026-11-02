@@ -10,7 +10,7 @@
 // both 1.2x and 1.3x supersampling -- shadowmap itself is the dominant
 // cost, not resolution). Back to off. If revisited, needs a real,
 // sustained multi-bot match for verification, not just a quick look.
-VARP(shadowmap, 0, 0, 1);
+VAR(shadowmap, 0, 0, 1);
 #else
 VARP(shadowmap, 0, 0, 1);
 #endif

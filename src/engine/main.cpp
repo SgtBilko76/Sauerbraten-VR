@@ -1521,6 +1521,13 @@ int main(int argc, char **argv)
         writecfg(game::restoreconfig());
     }
     execfile(game::autoexec(), false);
+#ifdef __ANDROID__
+    {
+        // El config.cfg del visor pudo guardar "shadowmap 1" (lo forzaba gl_checkextensions
+        // en builds anteriores); en VR ningún modelo proyecta sombra dinámica.
+        extern int shadowmap; shadowmap = 0;
+    }
+#endif
 
     identflags &= ~IDF_PERSIST;
 
