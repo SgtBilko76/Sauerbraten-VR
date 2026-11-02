@@ -848,13 +848,21 @@ void rendermodel(entitylight *light, const char *mdl, int anim, const vec &o, fl
     // (MDL_HUD) ni su propio modelo o ragdoll (d == player). vrplayershadow 1 lo
     // reactiva (pensado para un cuerpo completo con IK más adelante).
     if(!vrplayershadow && ((flags&MDL_HUD) || (d && d == player))) flags &= ~(MDL_SHADOW|MDL_DYNSHADOW);
+    // Con shadowmap real: el arma/brazo y el propio jugador ni siquiera entran en el mapa de sombras.
+    if(shadowmapping && !vrplayershadow && ((flags&MDL_HUD) || (d && d == player))) return;
+    // VR: solo los jugadores y los bots proyectan sombra (ni granadas, ni objetos, ni movibles, ni anillos).
+    if(shadowmapping && !(d && d->type==ENT_PLAYER) && !(flags&MDL_ITEM)) return;
 #endif
     if(shadowmapping && !(flags&(MDL_SHADOW|MDL_DYNSHADOW))) return;
     model *m = loadmodel(mdl); 
     if(!m) return;
     vec center(0, 0, 0), bbradius(0, 0, 0);
     float radius = 0;
+#ifdef __ANDROID__
+    bool shadow = !shadowmap && !glaring && (flags&(MDL_SHADOW|MDL_DYNSHADOW)) && showblobs && ((d && d->type==ENT_PLAYER) || (flags&MDL_ITEM)); // VR: jugadores, bots y objetos
+#else
     bool shadow = !shadowmap && !glaring && (flags&(MDL_SHADOW|MDL_DYNSHADOW)) && showblobs;
+#endif
 
     if(flags&(MDL_CULL_VFC|MDL_CULL_DIST|MDL_CULL_OCCLUDED|MDL_CULL_QUERY|MDL_SHADOW|MDL_DYNSHADOW))
     {
@@ -877,6 +885,9 @@ void rendermodel(entitylight *light, const char *mdl, int anim, const vec &o, fl
         }
 
         int culled = cullmodel(m, center, radius, flags, d, shadow);
+#ifdef __ANDROID__
+        if(shadowmapping && !culled) { extern void vrsmnote(const char *mdl); vrsmnote(mdl); }
+#endif
         if(culled)
         {
             if(culled&(MDL_CULL_OCCLUDED|MDL_CULL_QUERY) && flags&MDL_CULL_QUERY && !reflecting && !refracting)

@@ -1199,6 +1199,7 @@ void android_sauer_endframe(void)
         extern int vrglerrors, vrglerr502, vrglerr505, vrglerr506; extern unsigned int vrlastglerror;
         for(GLenum e; (e = glGetError()) != GL_NO_ERROR; ) { vrglerrors++; vrlastglerror = e; if(e == 0x502) vrglerr502++; else if(e == 0x505) vrglerr505++; else if(e == 0x506) vrglerr506++; }
     }
+    extern void vrsampleframe(); vrsampleframe();
     swapbuffers();
     renderedframe = inbetweenframes = true;
 }
@@ -1529,15 +1530,13 @@ int main(int argc, char **argv)
         execfile(game::defaultconfig());
         writecfg(game::restoreconfig());
     }
+#ifdef __ANDROID__
+    // Presets del visor: define vrpreset_* y aplica el de equilibrio una vez por versión
+    // (vrpresetapplied, que viene de config.cfg). Después manda lo que el usuario elija.
+    execfile("data/vr_presets.cfg", false);
+#endif
     execfile(game::autoexec(), false);
     if(headless) execute("maxfps 60");
-#ifdef __ANDROID__
-    {
-        // El config.cfg del visor pudo guardar "shadowmap 1" (lo forzaba gl_checkextensions
-        // en builds anteriores); en VR ningún modelo proyecta sombra dinámica.
-        extern int shadowmap; shadowmap = 0;
-    }
-#endif
 
     identflags &= ~IDF_PERSIST;
 

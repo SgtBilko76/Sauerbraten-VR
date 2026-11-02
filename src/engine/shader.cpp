@@ -990,6 +990,10 @@ static void genshadowmapvariant(Shader &s, const char *sname, const char *vs, co
             "float smtest = shadowmaptc.z*smvals.y;\n"
             "float shadowed = smtest < smvals.x && smtest > smvals.z ? smvals.w : 0.0;\n";
     pssm.put(sm, strlen(sm));
+    // SauVREngine: la sombra se desvanece en el borde del mapa (sin rectángulo visible).
+    const char *smedge =
+        "shadowed *= smoothstep(0.0, 0.2, min(min(shadowmaptc.x, 1.0-shadowmaptc.x), min(shadowmaptc.y, 1.0-shadowmaptc.y)));\n";
+    pssm.put(smedge, strlen(smedge));
     defformatstring(smlight, 
         "%s.rgb -= shadowed*clamp(%s.rgb - shadowmapambient.rgb, 0.0, 1.0);\n",
         pslight, pslight);

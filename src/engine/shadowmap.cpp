@@ -91,6 +91,23 @@ void guessshadowdir()
     shadowdir = dir;
 }
 
+// SauVREngine: sombra solo al aire libre. shadowfade: 1 al aire libre, 0 bajo techo;
+// se funde en el tiempo (updateshadowfade). La luz del sol es global (shadowdir).
+float shadowfade = 1;
+VARP(shadowceiling, 64, 400, 4096);
+
+static void updateshadowfade()
+{
+    // Un rayo al techo cada 4 frames: si hay techo cerca es interior y la sombra del sol se apaga.
+    static int frame = 0;
+    if(!(frame++ & 3))
+    {
+        float ceiling = raycube(camera1->o, vec(0, 0, 1), 0, RAY_CLIPMAT);
+        float target = ceiling < shadowceiling ? 0.0f : 1.0f;
+        shadowfade += (target - shadowfade)*0.5f;
+    }
+}
+
 bool shadowmapping = false;
 
 matrix4 shadowmatrix;
@@ -316,6 +333,10 @@ void pushshadowmap()
         }
 	}
     else { r = shadowmapambientcolor[0]; g = shadowmapambientcolor[1]; b = shadowmapambientcolor[2]; }
+    // La oscuridad de la sombra: la luz dentro de la sombra se reduce según shadowmapintensity
+    // (0..100), y solo al aire libre (shadowfade).
+    float darken = shadowmapintensity/100.0f*shadowfade;
+    r *= 1 - darken; g *= 1 - darken; b *= 1 - darken;
     GLOBALPARAMF(shadowmapambient, r/255.0f, g/255.0f, b/255.0f);
 }
 
@@ -324,11 +345,24 @@ void popshadowmap()
     if(!shadowmap || !shadowmaptex.rendertex) return;
 }
 
+// SauVREngine: tiempo de CPU del shadowmap en el frame (µs), para la telemetría shadow=.
+uint64_t vrshadowus = 0;
+// Diagnóstico: nombres de los modelos que llegan al pase de sombras en el último segundo (telemetría smcast=).
+char vrsmcast[768] = "";
+void vrsmnote(const char *mdl)
+{
+    if(strstr(vrsmcast, mdl)) return;
+    if(strlen(vrsmcast) + strlen(mdl) + 2 < sizeof(vrsmcast)) { strcat(vrsmcast, mdl); strcat(vrsmcast, " "); }
+}
+
 void rendershadowmap()
 {
     if(!shadowmap) return;
 
+    updateshadowfade();
+    uint64_t t0 = SDL_GetPerformanceCounter();
     shadowmaptex.render(1<<shadowmapsize, 1<<shadowmapsize, blurshadowmap, blursmsigma/100.0f);
+    vrshadowus += (SDL_GetPerformanceCounter() - t0) * 1000000 / SDL_GetPerformanceFrequency();
 }
 
 VAR(debugsm, 0, 0, 1);

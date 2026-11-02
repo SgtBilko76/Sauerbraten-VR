@@ -2899,6 +2899,30 @@ VARP(showfps, 0, 1, 1);
 extern int vrreflectdraws, vrreflectvisible; extern int getcurwaterpvs(); extern int getnumwaterplanes();
 uint64_t vrprofacc[VRP_COUNT] = { 0 };
 int vrprofframes = 0;
+// Duración de cada frame (ms) desde el último informe de telemetría: p50/p95/p99 y frames
+// que pasaron el presupuesto de 72 Hz (13,9 ms). vrsampleframe() se llama en cada endframe.
+#define VRFRAMEBUDGET 13.9f
+static float vrframems[1024];
+static int vrframecount = 0;
+static uint64_t vrframelast = 0;
+void vrsampleframe()
+{
+    uint64_t t = SDL_GetPerformanceCounter();
+    if(vrframelast && vrframecount < 1024) vrframems[vrframecount++] = (t - vrframelast) * 1000.0f / SDL_GetPerformanceFrequency();
+    vrframelast = t;
+}
+static int vrcmpframems(const void *a, const void *b) { float x = *(const float *)a, y = *(const float *)b; return x < y ? -1 : x > y; }
+void vrframestats(float &p50, float &p95, float &p99, int &late)
+{
+    p50 = p95 = p99 = -1; late = 0;
+    if(vrframecount <= 0) return;
+    qsort(vrframems, vrframecount, sizeof(float), vrcmpframems);
+    p50 = vrframems[(vrframecount-1)*50/100];
+    p95 = vrframems[(vrframecount-1)*95/100];
+    p99 = vrframems[(vrframecount-1)*99/100];
+    loopi(vrframecount) if(vrframems[i] > VRFRAMEBUDGET) late++;
+    vrframecount = 0;
+}
 static uint64_t vrproft0 = 0;
 void vrprofstart() { vrproft0 = SDL_GetPerformanceCounter(); }
 void vrprofmark(int phase)
@@ -2940,6 +2964,8 @@ FVARP(vrstatsscale, 0.5f, 1.5f, 4.0f);
 extern int vrfoveation, vrfoveationdynamic;
 VARFP(vrfoveationdynamic, 0, 1, 1, android_vr_set_foveation(vrfoveation, vrfoveationdynamic));
 VARFP(vrfoveation, 0, 3, 3, android_vr_set_foveation(vrfoveation, vrfoveationdynamic));
+// Versión del preset de data/vr_presets.cfg ya aplicada en este visor (se guarda en config.cfg).
+VARP(vrpresetapplied, 0, 0, 1000);
 #endif
 VARP(showfpsrange, 0, 0, 1);
 VAR(showeditstats, 0, 0, 1);
@@ -3221,13 +3247,15 @@ void gl_drawhud()
                     if(vrautocapture && capmap[0] && totalmillis >= nextcapture) { vrcapturepending = 1; nextcapture = totalmillis + vrautocapture*1000; }
                     float gwait = 0, gsubmit = 0, gtotal = 0; int gframes = android_vr_get_frametimes(&gwait, &gsubmit, &gtotal);
                     int pf = max(vrprofframes, 1);
-                    char tp[512]; formatstring(tp, " frames=%d total=%.1f wait=%.1f submit=%.1f tick=%.2f cull=%.2f geom=%.2f models=%.2f refl=%.2f water=%.2f alpha=%.2f parts=%.2f hud=%.2f psim=%.2f",
+                    extern uint64_t vrshadowus; extern char vrsmcast[768];
+                    float fp50, fp95, fp99; int flate; vrframestats(fp50, fp95, fp99, flate);
+                    char tp[1024]; formatstring(tp, " frames=%d total=%.1f wait=%.1f submit=%.1f tick=%.2f cull=%.2f geom=%.2f models=%.2f refl=%.2f water=%.2f alpha=%.2f parts=%.2f hud=%.2f psim=%.2f p50=%.1f p95=%.1f p99=%.1f late=%d shadow=%.2f smcast=%s",
                         gframes, gtotal, gwait, gsubmit,
                         vrprofacc[VRP_TICK]/1000.0f/pf, vrprofacc[VRP_CULL]/1000.0f/pf, vrprofacc[VRP_GEOM]/1000.0f/pf, vrprofacc[VRP_MODELS]/1000.0f/pf,
                         vrprofacc[VRP_REFLECT]/1000.0f/pf, vrprofacc[VRP_WATER]/1000.0f/pf, vrprofacc[VRP_ALPHA]/1000.0f/pf, vrprofacc[VRP_PARTS]/1000.0f/pf, vrprofacc[VRP_HUD]/1000.0f/pf,
-                        vrprofacc[VRP_PSIM]/1000.0f/pf);
+                        vrprofacc[VRP_PSIM]/1000.0f/pf, fp50, fp95, fp99, flate, vrshadowus/1000.0f/pf, vrsmcast);
                     concatstring(tl, tp);
-                    memset(vrprofacc, 0, sizeof(vrprofacc)); vrprofframes = 0;
+                    memset(vrprofacc, 0, sizeof(vrprofacc)); vrprofframes = 0; vrshadowus = 0; vrsmcast[0] = 0;
                     android_vr_telemetry(tl);
                     // Cada 10 s: ajustes de calidad y shaders que han fallado (raíz de "se ve apagado").
                     static int lastcfgline = 0;
