@@ -1,5 +1,26 @@
 #include "engine.h"
 
+#ifdef __ANDROID__
+#ifndef GL_TEXTURE_2D_ARRAY
+#define GL_TEXTURE_2D_ARRAY 0x8C1A
+#endif
+#ifndef GL_DEPTH_COMPONENT24
+#define GL_DEPTH_COMPONENT24 0x81A6
+#endif
+#ifndef GL_RGBA8
+#define GL_RGBA8 0x8058
+#endif
+static inline GLenum vrwatertarget() { return vrmultiviewactive ? GL_TEXTURE_2D_ARRAY : GL_TEXTURE_2D; }
+static inline void vrwaterattach(GLuint tex)
+{
+    if(vrmultiviewactive) vrmvattach(GL_COLOR_ATTACHMENT0, tex);
+    else glFramebufferTexture2D_(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
+}
+#else
+static inline GLenum vrwatertarget() { return GL_TEXTURE_2D; }
+static inline void vrwaterattach(GLuint tex) { glFramebufferTexture2D_(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0); }
+#endif
+
 VARFP(waterreflect, 0, 1, 1, { cleanreflections(); preloadwatershaders(); });
 VARFP(waterrefract, 0, 1, 1, { cleanreflections(); preloadwatershaders(); });
 VARFP(waterenvmap, 0, 1, 1, { cleanreflections(); preloadwatershaders(); });
@@ -272,6 +293,7 @@ struct Reflection
     int material, height, depth, age;
     bool init;
     matrix4 projmat;
+    matrix4 projmat2[2]; // multiview: una por ojo
     occludequery *query, *prevquery;
     vector<materialsurface *> matsurfs;
 
@@ -331,8 +353,13 @@ void setprojtexmatrix(Reflection &ref)
     {
         ref.init = false;
         (ref.projmat = camprojmatrix).projective();
+#ifdef __ANDROID__
+        if(vrmultiviewactive) { geteyecamprojs(ref.projmat2); loopi(2) ref.projmat2[i].projective(); }
+#endif
     }
-    
+#ifdef __ANDROID__
+    if(vrmultiviewactive) { LOCALPARAMV(watermatrix, ref.projmat2, 2); return; }
+#endif
     LOCALPARAM(watermatrix, ref.projmat);
 }
 
@@ -456,14 +483,14 @@ void renderwater()
         {
             if(waterreflect || waterrefract)
             {
-                if(waterreflect || !waterenvmap) glBindTexture(GL_TEXTURE_2D, waterreflect ? ref.tex : ref.refracttex);
+                if(waterreflect || !waterenvmap) glBindTexture(vrwatertarget(), waterreflect ? ref.tex : ref.refracttex);
                 setprojtexmatrix(ref);
             }
 
             if(waterrefract)
             {
                 glActiveTexture_(GL_TEXTURE3);
-                glBindTexture(GL_TEXTURE_2D, ref.refracttex);
+                glBindTexture(vrwatertarget(), ref.refracttex);
                 if(waterfade) 
                 {
                     float fadeheight = ref.height+offset+(below ? -2 : 2);
@@ -574,15 +601,40 @@ void cleanreflections()
     }
     if(reflectiondb)
     {
-        glDeleteRenderbuffers_(1, &reflectiondb);
+        {
+#ifdef __ANDROID__
+            if(vrmultiviewactive) glDeleteTextures(1, &reflectiondb); else
+#endif
+            glDeleteRenderbuffers_(1, &reflectiondb);
+        }
         reflectiondb = 0;
     }
 }
 
 VARFP(reflectsize, 6, 8, 11, cleanreflections());
 
+
 void genwatertex(GLuint &tex, GLuint &fb, GLuint &db, bool refract = false)
 {
+#ifdef __ANDROID__
+    if(vrmultiviewactive)
+    {
+        // Multiview: reflejo y refracción en texturas array de 2 capas (una por
+        // ojo), renderizadas en un solo pase con el mismo shader que la escena.
+        int size = 1<<reflectsize;
+        while(size>hwtexsize) size /= 2;
+        glGenTextures(1, &tex);
+        vrmvcreatearray(tex, size, size, GL_RGBA8, false, 1);
+        if(!fb) glGenFramebuffers_(1, &fb);
+        if(!db) { glGenTextures(1, &db); vrmvcreatearray(db, size, size, GL_DEPTH_COMPONENT24, true, 0); }
+        glBindFramebuffer_(GL_FRAMEBUFFER, fb);
+        vrmvattach(GL_COLOR_ATTACHMENT0, tex);
+        vrmvattach(GL_DEPTH_ATTACHMENT, db);
+        if(glCheckFramebufferStatus_(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) conoutf(CON_ERROR, "multiview: FBO de agua incompleto");
+        glBindFramebuffer_(GL_FRAMEBUFFER, defaultfb());
+        return;
+    }
+#endif
     static const GLenum colorfmts[] = { GL_RGBA, GL_RGBA8, GL_RGB, GL_RGB8, GL_FALSE },
                         depthfmts[] = { GL_DEPTH_COMPONENT24, GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT16, GL_DEPTH_COMPONENT32, GL_FALSE };
     static GLenum reflectfmt = GL_FALSE, refractfmt = GL_FALSE, depthfmt = GL_FALSE;
@@ -967,7 +1019,6 @@ void drawreflections()
     if((editmode && showmat && !drawtex) || drawtex == DRAWTEX_MINIMAP) return;
 #ifdef __ANDROID__
     if(vrsharereflections && androidEyeIndex > 0 && !drawtex) return;
-    { extern int vrmultiviewactive; if(vrmultiviewactive) return; } // TODO multiview: reflejos a textura array (docs/multiview.md, paso 3)
 #endif
 
     static int lastdrawn = 0;
@@ -999,7 +1050,7 @@ void drawreflections()
 
         vec clipmin(-1, -1, -1), clipmax(1, 1, 1);
         int sx, sy, sw, sh;
-        bool scissor = reflectscissor && calcscissorbox(ref, size, clipmin, clipmax, sx, sy, sw, sh);
+        bool scissor = reflectscissor && !vrmultiviewactive && calcscissorbox(ref, size, clipmin, clipmax, sx, sy, sw, sh);
         if(scissor) glScissor(sx, sy, sw, sh);
         else
         {
@@ -1012,7 +1063,7 @@ void drawreflections()
 
         if(waterreflect && ref.tex && camera1->o.z >= ref.height+offset)
         {
-            glFramebufferTexture2D_(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, ref.tex, 0);
+            vrwaterattach(ref.tex);
             if(scissor) glEnable(GL_SCISSOR_TEST);
             maskreflection(ref, offset, true);
             savevfcP();
@@ -1024,7 +1075,7 @@ void drawreflections()
 
         if(waterrefract && ref.refracttex)
         {
-            glFramebufferTexture2D_(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, ref.refracttex, 0);
+            vrwaterattach(ref.refracttex);
             if(scissor) glEnable(GL_SCISSOR_TEST);
             maskreflection(ref, offset, false, refractclear || !wfog || (ref.depth>=10000 && camera1->o.z >= ref.height + offset));
             if(wfog || waterfade)
@@ -1071,7 +1122,7 @@ void drawreflections()
             sw = sh = size;
         }
 
-        glFramebufferTexture2D_(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, ref.refracttex, 0);
+        vrwaterattach(ref.refracttex);
         if(scissor) glEnable(GL_SCISSOR_TEST);
         maskreflection(ref, -0.1f, false);
         savevfcP();

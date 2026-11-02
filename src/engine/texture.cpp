@@ -2708,6 +2708,9 @@ VAR(aaenvmap, 0, 2, 4);
 GLuint genenvmap(const vec &o, int envmapsize, int blur, bool onlysky)
 {
     int rendersize = 1<<(envmapsize+aaenvmap), sizelimit = min(hwcubetexsize, min(screenw, screenh));
+#ifdef __ANDROID__
+    { extern int vrmultiviewactive; extern int vrmvscratchsize(); if(vrmultiviewactive) sizelimit = min(sizelimit, vrmvscratchsize()); }
+#endif
     if(maxtexsize) sizelimit = min(sizelimit, maxtexsize);
     while(rendersize > sizelimit) rendersize /= 2;
     int texsize = min(rendersize, 1<<envmapsize);

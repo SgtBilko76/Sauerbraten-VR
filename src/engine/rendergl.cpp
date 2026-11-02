@@ -711,10 +711,11 @@ static vec androidEyeOffsetMeters(0, 0, 0);
 // Multiview (docs/multiview.md): offsets y frustums de cada ojo; la cámara
 // "central" (cammatrix/projmatrix) se usa para cull y CPU, y de ella salen
 // eyecammatrix/eyeprojmatrix para los shaders (camprojmatrix[2]).
-int vrmultiviewactive = 0;
+VAR(vrmultiviewactive, 0, 0, 1); // 1 = el glue renderiza multiview; lo lee glsl.cfg
 static vec androidEyeOffsets[2];
 static float androidEyeTans[2][4];
 static matrix4 eyecammatrix[2], eyeprojbase[2], projbase, invprojbase, eyecamprojmatrix[2];
+static vec eyeRelWorld[2]; // desplazamiento de cada ojo respecto a la cámara central, en el mundo
 static bool eyeprojvalid = false;
 int hudmatrixmode = 0; // 0 plano 2D, 1 anclado a la cabeza (desde projmatrix), 2 en el mundo (desde camprojmatrix)
 int vrglerrors = 0; unsigned int vrlastglerror = 0;
@@ -740,6 +741,92 @@ VAR(vrworldscale, 1, 8, 1000);
 
 int androidEyeIndex = 0;
 void android_sauer_set_eye_index(int eye) { androidEyeIndex = eye; }
+
+#ifdef __ANDROID__
+// ---- Destinos de render fuera de pantalla con multiview (docs/multiview.md, paso 3)
+// Un shader con num_views=2 solo puede dibujar en un framebuffer multiview, así
+// que reflejos, envmaps y minimapa se renderizan en texturas array de 2 capas.
+#ifndef GL_TEXTURE_2D_ARRAY
+#define GL_TEXTURE_2D_ARRAY 0x8C1A
+#endif
+#ifndef GL_DEPTH_COMPONENT24
+#define GL_DEPTH_COMPONENT24 0x81A6
+#endif
+#ifndef GL_RGBA8
+#define GL_RGBA8 0x8058
+#endif
+typedef void (*PFNVRTEXSTORAGE3D)(GLenum, GLsizei, GLenum, GLsizei, GLsizei, GLsizei);
+typedef void (*PFNVRFBTEXMULTIVIEW)(GLenum, GLenum, GLuint, GLint, GLint, GLsizei);
+typedef void (*PFNVRFBTEXLAYER)(GLenum, GLenum, GLuint, GLint, GLint);
+static PFNVRTEXSTORAGE3D vrTexStorage3D = NULL;
+static PFNVRFBTEXMULTIVIEW vrFramebufferTextureMultiview = NULL;
+static PFNVRFBTEXLAYER vrFramebufferTextureLayer = NULL;
+static bool vrmvloadfuncs()
+{
+    static int loaded = 0;
+    if(!loaded)
+    {
+        vrTexStorage3D = (PFNVRTEXSTORAGE3D)getprocaddress("glTexStorage3D");
+        vrFramebufferTextureMultiview = (PFNVRFBTEXMULTIVIEW)getprocaddress("glFramebufferTextureMultiviewOVR");
+        vrFramebufferTextureLayer = (PFNVRFBTEXLAYER)getprocaddress("glFramebufferTextureLayer");
+        loaded = vrTexStorage3D && vrFramebufferTextureMultiview && vrFramebufferTextureLayer ? 1 : -1;
+        if(loaded < 0) conoutf(CON_ERROR, "multiview: faltan funciones GL para texturas array");
+    }
+    return loaded > 0;
+}
+
+// Textura array de 2 capas (color o profundidad) lista para adjuntar como multiview.
+bool vrmvcreatearray(GLuint tex, int w, int h, GLenum internalfmt, bool depth, int filter)
+{
+    if(!vrmvloadfuncs()) return false;
+    glBindTexture(GL_TEXTURE_2D_ARRAY, tex);
+    vrTexStorage3D(GL_TEXTURE_2D_ARRAY, 1, internalfmt, w, h, 2);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, filter ? GL_LINEAR : GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, filter ? GL_LINEAR : GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+    return true;
+}
+
+void vrmvattach(GLenum attachment, GLuint tex)
+{
+    if(vrmvloadfuncs()) vrFramebufferTextureMultiview(GL_FRAMEBUFFER, attachment, tex, 0, 0, 2);
+}
+
+// Destino de trabajo compartido (1024², color+profundidad) para envmaps y
+// minimapa: se dibuja en él y luego se lee la capa 0 por un FBO normal.
+static GLuint vrscratchfb = 0, vrscratchreadfb = 0, vrscratchtex = 0, vrscratchdepth = 0;
+static const int VRSCRATCHSIZE = 1024;
+void vrmvscratchbind(int size)
+{
+    if(!vrmvloadfuncs()) return;
+    if(!vrscratchfb)
+    {
+        glGenTextures(1, &vrscratchtex); vrmvcreatearray(vrscratchtex, VRSCRATCHSIZE, VRSCRATCHSIZE, GL_RGBA8, false, 1);
+        glGenTextures(1, &vrscratchdepth); vrmvcreatearray(vrscratchdepth, VRSCRATCHSIZE, VRSCRATCHSIZE, GL_DEPTH_COMPONENT24, true, 0);
+        glGenFramebuffers_(1, &vrscratchfb);
+        glBindFramebuffer_(GL_FRAMEBUFFER, vrscratchfb);
+        vrmvattach(GL_COLOR_ATTACHMENT0, vrscratchtex);
+        vrmvattach(GL_DEPTH_ATTACHMENT, vrscratchdepth);
+        if(glCheckFramebufferStatus_(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) conoutf(CON_ERROR, "multiview: scratch FBO incompleto");
+        glGenFramebuffers_(1, &vrscratchreadfb);
+        glBindFramebuffer_(GL_FRAMEBUFFER, vrscratchreadfb);
+        vrFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, vrscratchtex, 0, 0);
+    }
+    glBindFramebuffer_(GL_FRAMEBUFFER, vrscratchfb);
+}
+
+// Deja la capa 0 del scratch como READ_FRAMEBUFFER (glReadPixels/glCopyTex*)
+// y el framebuffer del ojo como destino de dibujo.
+void vrmvscratchread()
+{
+    if(!vrscratchreadfb) return;
+    glBindFramebuffer_(GL_DRAW_FRAMEBUFFER, defaultfb());
+    glBindFramebuffer_(GL_READ_FRAMEBUFFER, vrscratchreadfb);
+}
+int vrmvscratchsize() { return VRSCRATCHSIZE; }
+#endif
 
 // camprojmatrix[2] actuales (o la central dos veces si no hay estéreo): para
 // quien compone su MVP en CPU (animmodel.h).
@@ -961,8 +1048,7 @@ void setcammatrix()
         // ojo = central desplazado por (offset_ojo - offset_medio) en el mundo
         vec rel = vec(androidEyeOffsets[i]).sub(androidEyeOffsetMeters), relWorld;
         eyerot.transposedtransformnormal(rel, relWorld);
-        eyecammatrix[i] = cammatrix;
-        eyecammatrix[i].translate(relWorld.mul(float(vrworldscale)).neg());
+        eyeRelWorld[i] = relWorld.mul(float(vrworldscale));
     }
     }
     else
@@ -973,7 +1059,7 @@ void setcammatrix()
         cammatrix.rotate_around_x(camera1->pitch*-RAD);
         cammatrix.rotate_around_z(camera1->yaw*-RAD);
         cammatrix.translate(vec(camera1->o).neg());
-        loopi(2) eyecammatrix[i] = cammatrix; // pases a textura: las dos vistas iguales
+        loopi(2) eyeRelWorld[i] = vec(0, 0, 0); // pases a textura: las dos vistas iguales
     }
 #else
     cammatrix.rotate_around_y(camera1->roll*RAD);
@@ -1026,6 +1112,8 @@ void setcamprojmatrix(bool init = true, bool flush = false)
             // misma corrección de projmatrix que lleve el pase (polygon offset, etc.)
             matrix4 p = eyeprojbase[i];
             p.d.z += projmatrix.d.z - projbase.d.z;
+            eyecammatrix[i] = cammatrix;
+            eyecammatrix[i].translate(vec(eyeRelWorld[i]).neg());
             eyecamprojmatrix[i].muld(p, eyecammatrix[i]);
         }
         else loopi(2) eyecamprojmatrix[i] = camprojmatrix;
@@ -1909,6 +1997,9 @@ int drawtex = 0;
 void drawcubemap(int size, const vec &o, float yaw, float pitch, const cubemapside &side, bool onlysky)
 {
     drawtex = DRAWTEX_ENVMAP;
+#ifdef __ANDROID__
+    if(vrmultiviewactive) vrmvscratchbind(size);
+#endif
 
     physent *oldcamera = camera1;
     static physent cmcamera;
@@ -1975,6 +2066,9 @@ void drawcubemap(int size, const vec &o, float yaw, float pitch, const cubemapsi
     }
 
     camera1 = oldcamera;
+#ifdef __ANDROID__
+    if(vrmultiviewactive) vrmvscratchread();
+#endif
     drawtex = 0;
 }
 
@@ -2107,6 +2201,9 @@ void drawminimap()
     renderprogress(0, "generating mini-map...", 0, !renderedframe);
 
     int size = 1<<minimapsize, sizelimit = min(hwtexsize, min(screenw, screenh));
+#ifdef __ANDROID__
+    if(vrmultiviewactive) sizelimit = min(sizelimit, vrmvscratchsize());
+#endif
     while(size > sizelimit) size /= 2;
     if(!minimaptex) glGenTextures(1, &minimaptex);
 
@@ -2135,6 +2232,9 @@ void drawminimap()
     minimapscale = vec((0.5f - 1.0f/size)/minimapradius.x, (0.5f - 1.0f/size)/minimapradius.y, 1.0f);
 
     drawtex = DRAWTEX_MINIMAP;
+#ifdef __ANDROID__
+    if(vrmultiviewactive) vrmvscratchbind(size);
+#endif
 
     physent *oldcamera = camera1;
     static physent cmcamera;
@@ -2195,6 +2295,9 @@ void drawminimap()
     drawtex = 0;
 
     glBindTexture(GL_TEXTURE_2D, minimaptex);
+#ifdef __ANDROID__
+    if(vrmultiviewactive) vrmvscratchread();
+#endif
     glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGB5, 0, 0, size, size, 0);
     setuptexparameters(minimaptex, NULL, 3, 1, GL_RGB5, GL_TEXTURE_2D);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);

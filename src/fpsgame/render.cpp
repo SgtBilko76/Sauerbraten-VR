@@ -9,8 +9,16 @@ namespace game
     vector<const char *> bestteams;
 
     VARP(ragdoll, 0, 1, 1);
+#ifdef __ANDROID__
+    // SauVREngine: con 32 bots los cadáveres se acumulan y cuestan CPU y GPU
+    // (cada uno es un modelo animado más). Un segundo en el suelo y 1,5 s de
+    // fundido de opacidad; luego desaparecen.
+    VARP(ragdollmillis, 0, 2500, 300000);
+    VARP(ragdollfade, 0, 1500, 300000);
+#else
     VARP(ragdollmillis, 0, 10000, 300000);
     VARP(ragdollfade, 0, 1000, 300000);
+#endif
     VARFP(playermodel, 0, 0, 4, changedplayermodel());
     VARP(forceplayermodels, 0, 0, 1);
     VARP(hidedead, 0, 0, 2);
