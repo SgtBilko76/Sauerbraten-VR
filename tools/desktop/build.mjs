@@ -2,6 +2,7 @@
 // Build de escritorio (Windows x64) del motor con llvm-mingw, sin make.
 // Sirve para hornear cosas en el PC (PVS, luces) y para editar mapas.
 //   npm run desktop:build [-- --clean]
+//   npm run desktop:build -- --server   → bin64/sauer_server.exe (servidor dedicado, -DSTANDALONE, consola)
 // Toolchain y dependencias, todo en C:/Android sin instalador:
 //   llvm-mingw-*            clang++ / lld      (zip de mstorsjo/llvm-mingw)
 //   dl/sdl/SDL2-*           SDL2, SDL2_image, SDL2_mixer (paquetes mingw oficiales)
@@ -18,6 +19,7 @@ const src = path.join(repo, 'src');
 const objdir = path.join(src, 'build-win64');
 const bindir = path.join(repo, 'bin64');
 const clean = process.argv.includes('--clean');
+const server = process.argv.includes('--server'); // servidor dedicado: SERVER_OBJS con -DSTANDALONE, sin SDL ni GL
 const androidRoot = process.env.ANDROID_TOOLCHAIN ?? 'C:/Android';
 
 function findDir(base, prefix) {
@@ -36,10 +38,10 @@ const sdlRoot = (p) => path.join(p, 'x86_64-w64-mingw32');
 
 // Lista de objetos del cliente tal como la define src/Makefile.
 const mk = fs.readFileSync(path.join(src, 'Makefile'), 'utf8');
-const m = /CLIENT_OBJS=([\s\S]*?)\r?\n\r?\n/.exec(mk);
-if (!m) throw new Error('CLIENT_OBJS no encontrado en src/Makefile');
+const m = (server ? /SERVER_OBJS=([\s\S]*?)\r?\n\r?\n/ : /CLIENT_OBJS=([\s\S]*?)\r?\n\r?\n/).exec(mk);
+if (!m) throw new Error((server ? 'SERVER' : 'CLIENT') + '_OBJS no encontrado en src/Makefile');
 const clientObjs = m[1].replace(/\\\r?\n/g, ' ').split(/\s+/).filter((t) => t.endsWith('.o'));
-const cppSources = clientObjs.map((o) => o.replace(/\.o$/, '.cpp'));
+const cppSources = clientObjs.map((o) => o.replace(/-standalone\.o$/, '.o').replace(/\.o$/, '.cpp'));
 const enetSources = fs.readdirSync(path.join(src, 'enet')).filter((f) => f.endsWith('.c')).map((f) => 'enet/' + f);
 const zlibFiles = ['adler32', 'compress', 'crc32', 'deflate', 'infback', 'inffast', 'inflate', 'inftrees', 'trees', 'uncompr', 'zutil', 'gzclose', 'gzlib', 'gzread', 'gzwrite'];
 
@@ -50,7 +52,7 @@ const includes = [
   '-I' + zlib,
   '-Ishared', '-Iengine', '-Ifpsgame', '-Ienet/include',
 ];
-const cxxflags = ['-O2', '-fsigned-char', '-fno-exceptions', '-fno-rtti', '-DWIN32', '-D_WIN32_WINNT=0x0601', '-w', '-std=gnu++11', ...includes];
+const cxxflags = ['-O2', '-fsigned-char', '-fno-exceptions', '-fno-rtti', '-DWIN32', '-D_WIN32_WINNT=0x0601', '-w', '-std=gnu++11', ...(server ? ['-DSTANDALONE'] : []), ...includes];
 const cflags = ['-O2', '-DWIN32', '-DHAS_SOCKLEN_T=1', '-w', '-Ienet/include', '-I' + zlib];
 
 if (clean) fs.rmSync(objdir, { recursive: true, force: true });
@@ -58,7 +60,7 @@ fs.mkdirSync(objdir, { recursive: true });
 fs.mkdirSync(bindir, { recursive: true });
 
 const jobs = [];
-for (const s of cppSources) jobs.push({ tool: cxx, flags: cxxflags, srcFile: path.join(src, s), obj: path.join(objdir, s.replace(/[\/\\]/g, '_') + '.o') });
+for (const s of cppSources) jobs.push({ tool: cxx, flags: cxxflags, srcFile: path.join(src, s), obj: path.join(objdir, s.replace(/[\/\\]/g, '_') + (server ? '.standalone.o' : '.o')) });
 for (const s of enetSources) jobs.push({ tool: cc, flags: cflags, srcFile: path.join(src, s), obj: path.join(objdir, s.replace(/[\/\\]/g, '_') + '.o') });
 for (const z of zlibFiles) jobs.push({ tool: cc, flags: cflags, srcFile: path.join(zlib, z + '.c'), obj: path.join(objdir, 'zlib_' + z + '.o') });
 
@@ -89,13 +91,21 @@ await Promise.all(Array.from({ length: Math.max(1, os.cpus().length) }, async ()
 console.log();
 if (failed) { console.error(`${failed} ficheros fallaron`); process.exit(1); }
 
-const exe = path.join(bindir, 'sauerbraten.exe');
+const exe = path.join(bindir, server ? 'sauer_server.exe' : 'sauerbraten.exe');
 const libs = ['-L' + path.join(sdlRoot(sdl), 'lib'), '-L' + path.join(sdlRoot(sdlImage), 'lib'), '-L' + path.join(sdlRoot(sdlMixer), 'lib'),
   '-lmingw32', '-lSDL2main', '-lSDL2', '-lSDL2_image', '-lSDL2_mixer', '-lopengl32', '-lws2_32', '-lwinmm',
   // SDL estática (por -static) tira de estas librerías de sistema
   '-lsetupapi', '-lole32', '-loleaut32', '-limm32', '-lversion', '-lgdi32', '-luser32', '-lshell32', '-ladvapi32', '-luuid', '-lrpcrt4'];
-const link = spawnSync(cxx, ['-O2', '-static', '-mwindows', '-o', exe, ...jobs.map((j) => j.obj), ...libs], { cwd: src, encoding: 'utf8' });
+// el servidor de Windows carga su icono de bandeja desde los recursos (vcpp/mingw.rc): sin .res aborta con "failed loading icon"
+const res = path.join(objdir, 'mingw.res');
+if (server) {
+  const wr = spawnSync(path.join(llvm, 'bin', 'x86_64-w64-mingw32-windres.exe'), ['-I', 'vcpp', '-i', 'vcpp/mingw.rc', '-J', 'rc', '-o', res, '-O', 'coff'], { cwd: src, encoding: 'utf8' });
+  if (wr.status !== 0) { console.error(wr.stderr); process.exit(1); }
+}
+const link = server
+  ? spawnSync(cxx, ['-O2', '-static', '-o', exe, res, ...jobs.map((j) => j.obj), '-lws2_32', '-lwinmm'], { cwd: src, encoding: 'utf8' }) // consola: se ve el log
+  : spawnSync(cxx, ['-O2', '-static', '-mwindows', '-o', exe, ...jobs.map((j) => j.obj), ...libs], { cwd: src, encoding: 'utf8' });
 if (link.status !== 0) { console.error(link.stderr); process.exit(1); }
-for (const [root, dll] of [[sdl, 'SDL2.dll'], [sdlImage, 'SDL2_image.dll'], [sdlMixer, 'SDL2_mixer.dll']])
+if (!server) for (const [root, dll] of [[sdl, 'SDL2.dll'], [sdlImage, 'SDL2_image.dll'], [sdlMixer, 'SDL2_mixer.dll']])
   fs.copyFileSync(path.join(sdlRoot(root), 'bin', dll), path.join(bindir, dll));
 console.log(`OK: ${exe} (${(fs.statSync(exe).size / 1e6).toFixed(1)} MB) en ${((Date.now() - t0) / 1000).toFixed(0)} s`);

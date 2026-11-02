@@ -95,3 +95,16 @@ npm run pvs:bake -- ruebli --cell 32
 ```
 
 `mapstats` imprime triángulos/vértices del mundo (duel7 32k, ruebli 196k, skycastle-r 384k).
+
+## Servidor dedicado en la LAN (docs/servidor-dedicado.md, paso 1)
+
+```
+npm run server:build   # bin64/sauer_server.exe (SERVER_OBJS con -DSTANDALONE + vcpp/mingw.rc; sin él aborta "failed loading icon")
+npm run server:lan     # arranca en UDP 28785 (info 28786), home en bin64/server-home; -- --name/--clients/--port
+```
+
+En el visor: menú principal → **lan connect** (descubrimiento por broadcast) o
+`/connect <IP del PC> 28785`. Comprobado con la build de escritorio
+(`-xconnect localhost`). Windows Firewall ya tiene regla para sauer_server.exe
+(si la borras, el primer arranque vuelve a pedirla). Los bots que se añadan
+desde el visor los piensa el visor hasta el paso 2 (anfitrión de IA headless).
