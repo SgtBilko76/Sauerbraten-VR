@@ -2,6 +2,7 @@
 
 #include "engine.h"
 #include "SDL_image.h"
+#include "texturelogical.h"
 
 #ifndef SDL_IMAGE_VERSION_ATLEAST
 #define SDL_IMAGE_VERSION_ATLEAST(X, Y, Z) \
@@ -2364,6 +2365,9 @@ static void texcombine(Slot &s, int index, Slot::Tex &t, bool forceload = false)
             break;
     }
     t.t = newtexture(NULL, key.getbuf(), ts, wrap, true, true, true, compress);
+    // Preserve map UV scale AND offsets when replacing a low-resolution image.
+    // Do this after upload: xs/ys are also used as input dimensions by newtexture.
+    texturelogicalsize(t.name, t.t->xs, t.t->ys);
 }
 
 static Slot &loadslot(Slot &s, bool forceload)
