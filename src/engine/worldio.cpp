@@ -1053,6 +1053,21 @@ COMMANDN(genpvsfile, autopvs, "");
 ICOMMAND(savepvsfile, "", (), intret(savepvsfile() ? 1 : 0));
 ICOMMAND(pvscells, "", (), intret(getnumviewcells()));
 
+// Horneado desde línea de comandos (tools/desktop/bake-pvs.mjs):
+//   sauerbraten.exe -q<home> -x"pvsbake duel7 32"  (cwd = carpeta con data/ y packages/)
+// Carga el mapa, genera el PVS de forma síncrona, guarda <mapa>.pvs y sale.
+extern void quit();
+ICOMMAND(pvsbake, "si", (char *map, int *cs),
+{
+    if(!load_world(map)) { conoutf(CON_ERROR, "pvsbake: no se pudo cargar %s", map); quit(); return; }
+    int cell = *cs > 0 ? *cs : 32;
+    clearpvs();
+    genpvs(&cell);
+    if(getnumviewcells() > 0) savepvsfile();
+    else conoutf(CON_ERROR, "pvsbake: sin celdas");
+    quit();
+});
+
 bool load_world(const char *mname, const char *cname)        // still supports all map formats that have existed since the earliest cube betas!
 {
     int loadingstart = SDL_GetTicks();

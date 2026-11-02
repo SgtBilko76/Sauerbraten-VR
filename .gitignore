@@ -64,3 +64,6 @@ Thumbs.db
 # APKs compiladas por tools/apk/build-apk.mjs (se sirven con serve.mjs)
 /dist/
 /node_modules/
+
+# Build de escritorio sin make (tools/desktop/build.mjs)
+/src/build-win64/

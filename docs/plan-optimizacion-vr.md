@@ -1,5 +1,26 @@
 # Plan de optimización VR de SauVREngine
 
+## 0. Objetivo rector (fijado por Killy, 2026-11-01)
+
+El motor se compila y se hornea en el PC y se adapta a fondo al hardware de
+Quest 3 y de la generación siguiente: esas dos son el objetivo. Se recorta
+del código base todo lo que no haga falta (caminos de render de escritorio
+antiguos, pasadas duplicadas, formatos sin uso), se actualiza lo que valga la
+pena y se busca el máximo de polígonos, efectos y sombras que el visor aguante
+a frame estable, pensando desde el principio en mundo abierto y online.
+
+Consecuencias para el plan:
+
+- **Herramientas en el PC primero**: build de escritorio (`tools/desktop/`)
+  para hornear PVS, luces y lo que venga; el visor solo ejecuta.
+- **Medir en el visor, decidir con cifras**: nada entra sin pasar por el
+  panel `vrstats` y la tabla de la sección 6.
+- **Renderer**: multiview, foveado, una sola pasada de culling por frame,
+  sombras y efectos con presupuesto y LOD, no apagados por defecto.
+- **Contenido**: cada mapa con PVS, lightmaps y LOD horneados desde el PC.
+- **Arquitectura**: sectores de carga, simulación por distancia y servidor
+  autoritativo (sección 4, fase 4) como diseño objetivo, no como añadido.
+
 Estado: borrador vivo, 2026-11-01. Objetivo: que el motor nativo (Cube 2 +
 OpenXR) rinda a 72 Hz estables en Quest 3 con margen para crecer hacia niveles
 grandes, sectores y cooperativo de 1 a 4. Cada fase tiene una forma de medir;

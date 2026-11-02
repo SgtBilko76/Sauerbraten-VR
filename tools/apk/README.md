@@ -63,3 +63,15 @@ El fichero lleva el crc del mapa: si el mapa cambia, se descarta y se regenera.
 cuando cambia el `versionCode`. Por eso `build-apk.mjs` pasa `-Pvcode` (minutos
 desde 2026-01-01) y `-Pvname` (versión + sha) a Gradle en cada build: sin eso,
 los cambios en `data/` o `packages/` no llegan al visor al actualizar la APK.
+
+## Build de escritorio y horneado en el PC
+
+`npm run desktop:build` compila el motor para Windows x64 con llvm-mingw
+(`C:/Android/llvm-mingw-*`, zip sin instalador) y las SDL2 oficiales para
+mingw (`C:/Android/dl/sdl/`), sin make: `tools/desktop/build.mjs` lee la lista
+de objetos de `src/Makefile`, compila en paralelo y enlaza estático en
+`bin64/sauerbraten.exe`. Vale como editor de mapas y para hornear.
+
+`npm run pvs:bake -- duel7 [--cell 32]` arranca ese exe con los assets de
+Android como cwd y el comando `pvsbake`, y deja `duel7.pvs` en
+`android/app/src/main/assets/packages/base/`. duel7: 2243 celdas, 82 kB, <1 min.
