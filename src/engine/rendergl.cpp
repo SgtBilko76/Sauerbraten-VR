@@ -2309,7 +2309,11 @@ void drawminimap()
 #ifdef __ANDROID__
     if(vrmultiviewactive) vrmvscratchread();
 #endif
+#ifdef __ANDROID__
+    glCopyTexImage2D(GL_TEXTURE_2D, 0, 0x8D62 /* GL_RGB565: GLES no acepta GL_RGB5 */, 0, 0, size, size, 0);
+#else
     glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGB5, 0, 0, size, size, 0);
+#endif
     setuptexparameters(minimaptex, NULL, 3, 1, GL_RGB5, GL_TEXTURE_2D);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
@@ -2907,7 +2911,8 @@ VARP(vrreflectavatar, 0, 0, 1);
 // Captura de pantalla del visor al PC por UDP (ver android_vr_capture en el glue):
 // /vrcapture ahora, o automática cada N segundos (0 = no).
 VARP(vrautocapture, 0, 30, 600);
-ICOMMAND(vrcapture, "", (), vrcapturepending = 1);
+int vrcapturescale = 3;
+ICOMMAND(vrcapture, "i", (int *scale), { vrcapturescale = *scale >= 1 && *scale <= 8 ? *scale : 3; vrcapturepending = 1; });
 // Multiview (un pase para los dos ojos). Cambia al reiniciar: el glue lee
 // vrmultiview.txt en el almacenamiento interno antes de crear el renderer.
 static void writevrmultiviewflag();
@@ -3211,11 +3216,11 @@ void gl_drawhud()
                     if(totalmillis - lastcfgline >= 10000)
                     {
                         lastcfgline = totalmillis;
-                        extern int shaderdetail, bumpmodels, texcompress, maxtexsize, texreduce, aniso, trilinear, glslversion, hwtexsize;
+                        extern int shaderdetail, bumpmodels, texcompress, maxtexsize, texreduce, aniso, trilinear, glslversion, hwtexsize; extern int vrenvprobe[4];
                         char fl[700]; int nf = getfailedshaders(fl, sizeof(fl));
                         char cl[1024];
-                        formatstring(cl, "sauvr cfg shaderdetail=%d bumpmodels=%d texcompress=%d maxtexsize=%d texreduce=%d aniso=%d trilinear=%d glsl=%d hwtex=%d shfail=%d: %s",
-                            shaderdetail, bumpmodels, texcompress, maxtexsize, texreduce, aniso, trilinear, glslversion, hwtexsize, nf, fl);
+                        formatstring(cl, "sauvr cfg shaderdetail=%d bumpmodels=%d texcompress=%d maxtexsize=%d texreduce=%d aniso=%d trilinear=%d glsl=%d hwtex=%d env=%d/%d/%d n=%d shfail=%d: %s",
+                            shaderdetail, bumpmodels, texcompress, maxtexsize, texreduce, aniso, trilinear, glslversion, hwtexsize, vrenvprobe[0], vrenvprobe[1], vrenvprobe[2], vrenvprobe[3], nf, fl);
                         android_vr_telemetry(cl);
                     }
                 }

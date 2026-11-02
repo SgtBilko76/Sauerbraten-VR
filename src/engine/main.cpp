@@ -1184,7 +1184,8 @@ void android_sauer_drawframe(void)
     gamerender();
     // Captura con el framebuffer del ojo aún enlazado (antes de soltar la swapchain).
     extern int vrcapturepending;
-    if(vrcapturepending) { vrcapturepending = 0; android_vr_capture(); }
+    extern int vrcapturescale;
+    if(vrcapturepending) { vrcapturepending = 0; android_vr_capture(vrcapturescale); vrcapturescale = 3; }
 }
 
 void android_sauer_endframe(void)

@@ -613,7 +613,11 @@ VARFP(texcompress, 0, 1<<10, 1<<12, initwarning("texture quality", INIT_LOAD));
 VARFP(texcompressquality, -1, -1, 1, setuptexcompress());
 VARFP(trilinear, 0, 1, 1, initwarning("texture filtering", INIT_LOAD));
 VARFP(bilinear, 0, 1, 1, initwarning("texture filtering", INIT_LOAD));
+#ifdef __ANDROID__
+VARFP(aniso, 0, 4, 16, initwarning("texture filtering", INIT_LOAD));
+#else
 VARFP(aniso, 0, 0, 16, initwarning("texture filtering", INIT_LOAD));
+#endif
 
 extern int usetexcompress;
 
@@ -738,8 +742,30 @@ void cleanupmipmaps()
 
 VARFP(gpumipmap, 0, 0, 1, cleanupmipmaps());
 
+#ifdef __ANDROID__
+#ifndef GL_RGB565
+#define GL_RGB565 0x8D62
+#endif
+// GLES no tiene GL_RGB5/GL_RGB10/GL_RGB16 ni GL_RGBA16 como formatos internos:
+// glTexImage2D los rechaza (GL_INVALID_VALUE) y la textura queda vacía. Los
+// envmaps (reflejos metálicos de ítems y materiales) y el minimapa usaban GL_RGB5.
+static inline GLenum glesinternalformat(GLenum internal)
+{
+    switch(internal)
+    {
+        case GL_RGB5: return GL_RGB565;
+        case GL_RGB10: case GL_RGB16: return GL_RGB8;
+        case GL_RGBA16: return GL_RGBA8;
+        default: return internal;
+    }
+}
+#endif
+
 void uploadtexture(int tnum, GLenum target, GLenum internal, int tw, int th, GLenum format, GLenum type, void *pixels, int pw, int ph, int pitch, bool mipmap)
 {
+#ifdef __ANDROID__
+    internal = glesinternalformat(internal);
+#endif
     int bpp = formatsize(format), row = 0, rowalign = 0;
     if(!pitch) pitch = pw*bpp; 
     uchar *buf = NULL;
@@ -913,6 +939,7 @@ static GLenum textype(GLenum &component, GLenum &format)
             break;
 
         case GL_RGB5:
+        case 0x8D62: /* GL_RGB565 */
         case GL_RGB8:
         case GL_RGB10:
         case GL_RGB16:
@@ -2782,6 +2809,29 @@ void initenvmaps()
     }
 }
 
+#ifdef __ANDROID__
+int vrenvprobe[4] = { -1, -1, -1, 0 }; // r,g,b del centro de la cara +X del primer envmap, y número de envmaps
+static void vrprobeenvmaps()
+{
+    vrenvprobe[0] = vrenvprobe[1] = vrenvprobe[2] = -1; vrenvprobe[3] = envmaps.length();
+    if(!envmaps.length() || !envmaps[0].tex) return;
+    static GLuint fb = 0; if(!fb) glGenFramebuffers_(1, &fb);
+    glBindFramebuffer_(GL_READ_FRAMEBUFFER, fb);
+    glFramebufferTexture2D_(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_CUBE_MAP_POSITIVE_X, envmaps[0].tex, 0);
+    if(glCheckFramebufferStatus_(GL_READ_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE)
+    {
+        uchar px[4] = { 0, 0, 0, 0 };
+        int sz = envmaps[0].size ? min(envmaps[0].size, envmapsize) : envmapsize;
+        int half = (1<<sz)/2;
+        glPixelStorei(GL_PACK_ALIGNMENT, 1);
+        glReadPixels(half, half, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
+        vrenvprobe[0] = px[0]; vrenvprobe[1] = px[1]; vrenvprobe[2] = px[2];
+    }
+    glBindFramebuffer_(GL_READ_FRAMEBUFFER, 0);
+    glBindFramebuffer_(GL_FRAMEBUFFER, defaultfb());
+}
+#endif
+
 void genenvmaps()
 {
     if(envmaps.empty()) return;
@@ -2799,6 +2849,9 @@ void genenvmaps()
             lastprogress = millis;
         }
     }
+#ifdef __ANDROID__
+    vrprobeenvmaps();
+#endif
 }
 
 ushort closestenvmap(const vec &o)

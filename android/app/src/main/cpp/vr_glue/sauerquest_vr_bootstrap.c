@@ -518,7 +518,7 @@ static void *vrCaptureSend(void *arg)
     return NULL;
 }
 
-void android_vr_capture(void)
+void android_vr_capture(int scale)
 {
     ovrFramebuffer *fb = &gAppState.Renderer.FrameBuffer[0];
     if (fb->ColorSwapChain.Handle == XR_NULL_HANDLE || !fb->ColorSwapChainImage) return;
@@ -537,7 +537,7 @@ void android_vr_capture(void)
     glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
     glBindFramebuffer(GL_FRAMEBUFFER, fb->FrameBuffers[fb->TextureSwapChainIndex]);
     if (!full) return;
-    const int S = 3;
+    const int S = scale >= 1 && scale <= 8 ? scale : 3;
     int ow = w / S, oh = h / S;
     VrCaptureJob *job = (VrCaptureJob *)malloc(sizeof(VrCaptureJob));
     job->rgb = (unsigned char *)malloc((size_t)ow * oh * 3);
