@@ -2314,14 +2314,7 @@ static void addname(vector<char> &key, Slot &slot, Slot::Tex &t, bool combined =
 {
     if(combined) key.add('&');
     if(prefix) { while(*prefix) key.add(*prefix++); }
-    // leading <tags> go before packages/ so texturedata can parse the key when reloading
-    const char *name = t.name;
-    while(name[0]=='<' && strchr(name, '>'))
-    {
-        const char *end = strchr(name, '>');
-        for(; name<=end; name++) key.add(*name);
-    }
-    defformatstring(tname, "packages/%s", name);
+    defformatstring(tname, "packages/%s", t.name);
     for(const char *s = path(tname); *s; key.add(*s++));
 }
 
@@ -2955,8 +2948,6 @@ bool reloadtexture(Texture &tex)
             int compress = 0;
             ImageData s;
             if(!texturedata(s, tex.name, NULL, true, &compress) || !newtexture(&tex, NULL, s, tex.clamp, tex.mipmap, false, false, compress)) return false;
-            // newtexture resets xs/ys to the file size; restore the logical map size
-            texturelogicalsize(tex.name, tex.xs, tex.ys);
             break;
         }
 
