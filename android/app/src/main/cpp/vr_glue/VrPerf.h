@@ -31,6 +31,8 @@ typedef struct {
     int droppedFrames;
     /* estado aplicado */
     int foveationLevel, foveationDynamic;
+    /* swapchains que el runtime aceptó en el último cambio de foveado; 0 = no aplicado */
+    int foveationApplied;
     float refreshHz;
 } VrPerfMetrics;
 

@@ -144,7 +144,8 @@ extern void autopvs();
 
 // Perfil de CPU por fases del frame (SauVREngine, rendergl.cpp). Acumula
 // microsegundos por fase; la telemetría lo vuelca y lo pone a cero cada segundo.
-enum { VRP_TICK = 0, VRP_CULL, VRP_GEOM, VRP_MODELS, VRP_REFLECT, VRP_WATER, VRP_ALPHA, VRP_PARTS, VRP_HUD, VRP_COUNT };
+// VRP_PSIM: simulación de partículas (updateparticles) dentro del tick, para separarla del dibujado (VRP_PARTS).
+enum { VRP_TICK = 0, VRP_CULL, VRP_GEOM, VRP_MODELS, VRP_REFLECT, VRP_WATER, VRP_ALPHA, VRP_PARTS, VRP_HUD, VRP_PSIM, VRP_COUNT };
 extern uint64_t vrprofacc[VRP_COUNT];
 extern int headless; // -H: sin pantalla (main.cpp)
 extern int vrprofframes;

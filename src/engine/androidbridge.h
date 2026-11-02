@@ -47,7 +47,7 @@ void android_get_eye_size(int *w, int *h);
 typedef struct {
     float appCpuMs, appGpuMs, compCpuMs, compGpuMs, latencyMs;
     float cpuUtilAvg, cpuUtilWorst, gpuUtil;
-    int droppedFrames, foveationLevel, foveationDynamic;
+    int droppedFrames, foveationLevel, foveationDynamic, foveationApplied;
     float refreshHz;
 } android_vr_metrics;
 int android_vr_get_metrics(android_vr_metrics *m);

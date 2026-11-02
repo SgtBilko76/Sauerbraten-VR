@@ -1159,7 +1159,9 @@ static void gametick()
 
     // miscellaneous general game effects
     recomputecamera();
+    vrprofmark(VRP_TICK);
     updateparticles();
+    vrprofmark(VRP_PSIM);
     updatesounds();
 }
 

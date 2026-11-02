@@ -493,7 +493,7 @@ int android_vr_get_metrics(android_vr_metrics *m)
     m->appCpuMs = p.appCpuMs; m->appGpuMs = p.appGpuMs;
     m->compCpuMs = p.compCpuMs; m->compGpuMs = p.compGpuMs; m->latencyMs = p.latencyMs;
     m->cpuUtilAvg = p.cpuUtilAvg; m->cpuUtilWorst = p.cpuUtilWorst; m->gpuUtil = p.gpuUtil;
-    m->droppedFrames = p.droppedFrames; m->foveationLevel = p.foveationLevel;
+    m->droppedFrames = p.droppedFrames; m->foveationLevel = p.foveationLevel; m->foveationApplied = p.foveationApplied;
     m->foveationDynamic = p.foveationDynamic; m->refreshHz = p.refreshHz;
     return ok;
 }

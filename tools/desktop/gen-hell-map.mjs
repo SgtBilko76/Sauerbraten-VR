@@ -380,6 +380,24 @@ texturereset
 `;
 fs.writeFileSync(path.join(outDir, 'hell.cfg'), cfg);
 
+// ---- miniatura opcional (--preview ruta.png): vista cenital 256x256, norte arriba.
+// El menú de mapas usa packages/base/<mapa>.jpg; la conversión a jpg se hace aparte.
+const previewArg = process.argv.indexOf('--preview');
+if (previewArg > 0) {
+    const size = G * 2, rgb = Buffer.alloc(size * size * 3);
+    const colour = { [V.LAVA]: [255, 120, 20], [V.METAL]: [120, 125, 135], [V.RAIL]: [95, 100, 110],
+        [V.BRICK]: [150, 70, 45], [V.ROCK]: [92, 64, 40], [V.CLIFF]: [110, 80, 55], [V.FLOOR]: [80, 82, 88] };
+    for (let py = 0; py < size; py++)
+        for (let px = 0; px < size; px++) {
+            const x = px >> 1, y = G - 1 - (py >> 1);
+            let top = -1, c = [20, 8, 6];
+            for (let z = G - 1; z >= 0 && top < 0; z--) if (get(x, y, z) !== V.AIR) { top = z; c = colour[get(x, y, z)]; }
+            const shade = top < 0 ? 1 : 0.55 + 0.45 * (top / 22);
+            rgb.set(c.map((v) => Math.min(255, Math.round(v * shade))), (py * size + px) * 3);
+        }
+    fs.writeFileSync(process.argv[previewArg + 1], encodePng(size, rgb));
+}
+
 // ---- resumen y vista cenital (norte arriba) para comprobar la distribución
 console.log(`hell: ${ents.length} entidades, ${leaves} cubos hoja (${lava} de lava), ${spires} torres, ${w.n} bytes sin comprimir`);
 console.log('vista cenital (~ lava, = metal, % ladrillo, # roca/acantilado, . suelo, espacio = aire):');

@@ -93,7 +93,7 @@ static PFN_xrCreateFoveationProfileFB pfnCreateProfile = NULL;
 static PFN_xrDestroyFoveationProfileFB pfnDestroyProfile = NULL;
 static PFN_xrUpdateSwapchainFB pfnUpdateSwapchain = NULL;
 static XrFoveationProfileFB currentProfile = XR_NULL_HANDLE;
-static int currentLevel = -1, currentDynamic = -1;
+static int currentLevel = -1, currentDynamic = -1, currentApplied = 0;
 
 static XrSwapchainCreateInfoFoveationFB foveationCreateInfo = {
     XR_TYPE_SWAPCHAIN_CREATE_INFO_FOVEATION_FB, NULL,
@@ -137,19 +137,32 @@ void VrPerf_SetFoveation(int level, int dynamic)
         return;
     }
 
+    /* Solo cuenta como aplicado lo que el runtime acepta: con multiview hay una
+     * sola swapchain (array de 2 capas) y el ojo 1 no tiene. Antes el nivel se
+     * guardaba aunque xrUpdateSwapchainFB fallara, y la telemetría mostraba un
+     * foveado que quizá no estaba activo. */
     XrSwapchainStateFoveationFB state = { XR_TYPE_SWAPCHAIN_STATE_FOVEATION_FB, NULL, 0, profile };
+    int tried = 0, accepted = 0;
     for (int eye = 0; eye < ovrMaxNumEyes; eye++) {
         XrSwapchain sc = gAppState.Renderer.FrameBuffer[eye].ColorSwapChain.Handle;
         if (sc == XR_NULL_HANDLE) continue;
-        if (pfnUpdateSwapchain(sc, (const XrSwapchainStateBaseHeaderFB *)&state) != XR_SUCCESS)
-            ALOGE("VrPerf: xrUpdateSwapchainFB falló (ojo %d)", eye);
+        tried++;
+        if (pfnUpdateSwapchain(sc, (const XrSwapchainStateBaseHeaderFB *)&state) == XR_SUCCESS) accepted++;
+        else ALOGE("VrPerf: xrUpdateSwapchainFB falló (ojo %d, nivel %d)", eye, level);
+    }
+    if (accepted == 0) {
+        pfnDestroyProfile(profile);
+        currentApplied = 0;
+        ALOGE("VrPerf: foveado nivel %d no aplicado (swapchains probadas %d)", level, tried);
+        return;
     }
 
     if (currentProfile != XR_NULL_HANDLE) pfnDestroyProfile(currentProfile);
     currentProfile = profile;
     currentLevel = level;
     currentDynamic = dynamic;
-    ALOGV("VrPerf: foveado nivel %d dinámico %d", level, dynamic);
+    currentApplied = accepted;
+    ALOGV("VrPerf: foveado nivel %d dinámico %d (swapchains %d)", level, dynamic, accepted);
 }
 
 /* ---- API ------------------------------------------------------------- */
@@ -178,6 +191,7 @@ int VrPerf_Query(VrPerfMetrics *out)
     out->droppedFrames = dropped < 0 ? -1 : (int)dropped;
     out->foveationLevel = vrFoveationSupported ? (currentLevel < 0 ? 0 : currentLevel) : -1;
     out->foveationDynamic = currentDynamic < 0 ? 0 : currentDynamic;
+    out->foveationApplied = currentApplied;
     out->refreshHz = gAppState.currentDisplayRefreshRate;
     return ok;
 }
