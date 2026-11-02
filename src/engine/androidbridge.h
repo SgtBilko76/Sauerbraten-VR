@@ -65,6 +65,9 @@ void android_sauer_set_eyes(float dx0, float dy0, float dz0, float dx1, float dy
                             float tl1, float tr1, float tu1, float td1);
 /* 1 si el glue creó la swapchain en array y espera shaders multiview. */
 int android_vr_multiview(void);
+/* Lee la capa 0 del framebuffer del ojo (lo que ve el ojo izquierdo), lo reduce
+ * y lo manda al PC por UDP en trozos (tools/apk/capture.mjs lo guarda en PNG). */
+void android_vr_capture(void);
 /* Tiempos medios por frame (ms) del bucle VR desde la última llamada: espera en
  * xrWaitFrame (TBXR_FrameSetup), xrEndFrame (TBXR_submitFrame) y frame completo.
  * Devuelve el número de frames acumulados y pone los acumuladores a cero. */

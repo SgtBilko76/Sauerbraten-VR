@@ -1175,6 +1175,9 @@ void android_sauer_drawframe(void)
     if(minimized) return;
     inbetweenframes = false;
     gamerender();
+    // Captura con el framebuffer del ojo aún enlazado (antes de soltar la swapchain).
+    extern int vrcapturepending;
+    if(vrcapturepending) { vrcapturepending = 0; android_vr_capture(); }
 }
 
 void android_sauer_endframe(void)
@@ -1182,8 +1185,8 @@ void android_sauer_endframe(void)
     if(minimized) return;
     {
         // Errores GL del frame → telemetría (glerr=, gllast=). Barato: una llamada por frame.
-        extern int vrglerrors; extern unsigned int vrlastglerror;
-        for(GLenum e; (e = glGetError()) != GL_NO_ERROR; ) { vrglerrors++; vrlastglerror = e; }
+        extern int vrglerrors, vrglerr502, vrglerr505, vrglerr506; extern unsigned int vrlastglerror;
+        for(GLenum e; (e = glGetError()) != GL_NO_ERROR; ) { vrglerrors++; vrlastglerror = e; if(e == 0x502) vrglerr502++; else if(e == 0x505) vrglerr505++; else if(e == 0x506) vrglerr506++; }
     }
     swapbuffers();
     renderedframe = inbetweenframes = true;

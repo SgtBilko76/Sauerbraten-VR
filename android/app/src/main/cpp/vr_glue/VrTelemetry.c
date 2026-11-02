@@ -42,6 +42,20 @@ static void scanInterfaces(void)
     freeifaddrs(list);
 }
 
+void VrTelemetry_SendRaw(const void *data, size_t len)
+{
+    if (sock < 0) {
+        sock = socket(AF_INET, SOCK_DGRAM, 0);
+        if (sock < 0) return;
+        int on = 1;
+        setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &on, sizeof(on));
+    }
+    time_t now = time(NULL);
+    if (numtargets == 0 || now - lastscan >= 10) { scanInterfaces(); lastscan = now; }
+    for (int i = 0; i < numtargets; i++)
+        sendto(sock, data, len, 0, (struct sockaddr *)&targets[i], sizeof(targets[i]));
+}
+
 void VrTelemetry_Send(const char *line)
 {
     if (sock < 0) {

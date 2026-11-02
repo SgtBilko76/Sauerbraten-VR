@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import dgram from 'node:dgram';
+import { createCaptureSink } from './capture.mjs';
 import { fileURLToPath } from 'node:url';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -105,8 +106,11 @@ function serveApk(req, res, name) {
 // dist/telemetry.log para analizarla después.
 const telemetry = [];
 const telemetryLog = path.join(repo, 'dist', 'telemetry.log');
+const capture = createCaptureSink(path.join(repo, 'dist', 'captures'));
 const udp = dgram.createSocket({ type: 'udp4', reuseAddr: true });
 udp.on('message', (msg, rinfo) => {
+  if (capture.binary(msg)) return;
+  if (capture.text(msg.toString(), rinfo)) return;
   const line = `${new Date().toISOString().slice(11, 19)} ${rinfo.address} ${msg.toString().trim()}`;
   telemetry.push(line);
   if (telemetry.length > 3600) telemetry.shift();

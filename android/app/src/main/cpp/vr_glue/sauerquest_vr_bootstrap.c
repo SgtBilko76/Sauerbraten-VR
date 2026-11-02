@@ -488,6 +488,69 @@ int android_vr_multiview(void)
     return TBXR_Multiview() ? 1 : 0;
 }
 
+/* ---- Captura de pantalla al PC ------------------------------------------
+ * Se llama con el framebuffer del ojo enlazado. Lee la capa 0 (ojo izquierdo)
+ * por un FBO de lectura normal, reduce 3x, y un hilo aparte manda los trozos
+ * por UDP (cabecera de texto + paquetes "SVRI" id seq rgb) sin parar el render. */
+typedef struct { unsigned char *rgb; int w, h, id; } VrCaptureJob;
+static void *vrCaptureSend(void *arg)
+{
+    VrCaptureJob *job = (VrCaptureJob *)arg;
+    const int CHUNK = 1200;
+    size_t total = (size_t)job->w * job->h * 3;
+    int nchunks = (int)((total + CHUNK - 1) / CHUNK);
+    char head[96];
+    snprintf(head, sizeof(head), "sauvrimg begin %d %d %d %d", job->w, job->h, nchunks, job->id);
+    VrTelemetry_Send(head);
+    unsigned char pkt[7 + 1200];
+    memcpy(pkt, "SVRI", 4); pkt[4] = (unsigned char)job->id;
+    for (int i = 0; i < nchunks; i++) {
+        size_t off = (size_t)i * CHUNK, len = total - off < CHUNK ? total - off : CHUNK;
+        pkt[5] = i & 0xff; pkt[6] = (i >> 8) & 0xff;
+        memcpy(pkt + 7, job->rgb + off, len);
+        VrTelemetry_SendRaw(pkt, 7 + len);
+        usleep(400); /* ~2,4 MB/s: la Wi-Fi lo aguanta sin perder trozos */
+    }
+    free(job->rgb); free(job);
+    return NULL;
+}
+
+void android_vr_capture(void)
+{
+    ovrFramebuffer *fb = &gAppState.Renderer.FrameBuffer[0];
+    if (fb->ColorSwapChain.Handle == XR_NULL_HANDLE || !fb->ColorSwapChainImage) return;
+    GLuint tex = fb->ColorSwapChainImage[fb->TextureSwapChainIndex].image;
+    int w = (int)fb->ColorSwapChain.Width, h = (int)fb->ColorSwapChain.Height;
+    static GLuint readfb = 0;
+    if (!readfb) glGenFramebuffers(1, &readfb);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, readfb);
+    if (fb->Multiview) glFramebufferTextureLayer(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, tex, 0, 0);
+    else glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
+    unsigned char *full = (unsigned char *)malloc((size_t)w * h * 4);
+    if (full) {
+        glPixelStorei(GL_PACK_ALIGNMENT, 1);
+        glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, full);
+    }
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, fb->FrameBuffers[fb->TextureSwapChainIndex]);
+    if (!full) return;
+    const int S = 3;
+    int ow = w / S, oh = h / S;
+    VrCaptureJob *job = (VrCaptureJob *)malloc(sizeof(VrCaptureJob));
+    job->rgb = (unsigned char *)malloc((size_t)ow * oh * 3);
+    job->w = ow; job->h = oh;
+    static int capid = 0; job->id = (++capid) & 0xff;
+    for (int y = 0; y < oh; y++) {
+        const unsigned char *src = full + ((size_t)(h - 1 - y * S) * w) * 4; /* GL: fila 0 abajo */
+        unsigned char *dst = job->rgb + (size_t)y * ow * 3;
+        for (int x = 0; x < ow; x++) { const unsigned char *p = src + (size_t)x * S * 4; dst[x*3] = p[0]; dst[x*3+1] = p[1]; dst[x*3+2] = p[2]; }
+    }
+    free(full);
+    pthread_t th;
+    if (pthread_create(&th, NULL, vrCaptureSend, job) == 0) pthread_detach(th);
+    else { free(job->rgb); free(job); }
+}
+
 void *AppThreadFunction(void *parm)
 {
     gAppThread = (ovrAppThread *)parm;

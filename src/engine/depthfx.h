@@ -10,7 +10,11 @@ extern void cleanupdepthfx();
 VARFP(fpdepthfx, 0, 0, 1, cleanupdepthfx());
 VARP(depthfxemuprecision, 0, 1, 1);
 VARFP(depthfxsize, 6, 7, 12, cleanupdepthfx());
+#ifdef __ANDROID__
+VARP(depthfx, 0, 0, 1); // multiview: su destino no es array (error GL por frame)
+#else
 VARP(depthfx, 0, 1, 1);
+#endif
 VARP(depthfxparts, 0, 1, 1);
 VARP(blurdepthfx, 0, 1, 7);
 VARP(blurdepthfxsigma, 1, 50, 200);
