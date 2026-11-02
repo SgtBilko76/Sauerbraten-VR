@@ -366,6 +366,7 @@ void setprojtexmatrix(Reflection &ref)
 Reflection reflections[MAXREFLECTIONS];
 Reflection waterfallrefraction;
 GLuint reflectionfb = 0, reflectiondb = 0;
+int vrreflectdraws = 0, vrreflectvisible = 0; // telemetría: reflejos dibujados / superficies candidatas por segundo
 
 GLuint getwaterfalltex() { return waterfallrefraction.refracttex ? waterfallrefraction.refracttex : notexture->id; }
 
@@ -830,7 +831,7 @@ void queryreflections()
                 }
                 lastmat = m.material;
             }
-            if(m.orient==O_TOP) addreflection(m);
+            if(m.orient==O_TOP) { addreflection(m); vrreflectvisible++; }
             else addwaterfallrefraction(m);
         }
     }
@@ -1044,7 +1045,7 @@ void drawreflections()
             glViewport(0, 0, size, size);
             glBindFramebuffer_(GL_FRAMEBUFFER, reflectionfb);
         }
-        refs++;
+        refs++; vrreflectdraws++;
         ref.init = true;
         lastdrawn = n;
 

@@ -1000,7 +1000,13 @@ static void lockpvs_(bool lock)
 VARF(lockpvs, 0, 0, 1, lockpvs_(lockpvs!=0));
 
 VARN(pvs, usepvs, 0, 1, 1);
+#ifdef __ANDROID__
+// SauVREngine: el PVS de agua del fichero precalculado marcaba los reflejos
+// como ocultos (fase de reflejo a 0 ms, agua negra). Apagado: ahorra poco.
+VARN(waterpvs, usewaterpvs, 0, 0, 1);
+#else
 VARN(waterpvs, usewaterpvs, 0, 1, 1);
+#endif
 
 void setviewcell(const vec &p)
 {
@@ -1307,6 +1313,9 @@ bool pvsoccludedsphere(const vec &center, float radius)
     ivec bbmin(vec(center).sub(radius)), bbmax(vec(center).add(radius+1));
     return pvsoccluded(curpvs, bbmin, bbmax);
 }
+
+int getcurwaterpvs() { return curwaterpvs; }
+int getnumwaterplanes() { return numwaterplanes; }
 
 bool waterpvsoccluded(int height)
 {

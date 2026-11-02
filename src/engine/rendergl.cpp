@@ -2859,6 +2859,7 @@ VARP(showfps, 0, 0, 1); // en VR lo sustituye vrstats (plano anclado a la cabeza
 VARP(showfps, 0, 1, 1);
 #endif
 // Panel de métricas en el HUD VR: 0 nada, 1 fps y ms, 2 también tris/verts/draw calls.
+extern int vrreflectdraws, vrreflectvisible; extern int getcurwaterpvs(); extern int getnumwaterplanes();
 uint64_t vrprofacc[VRP_COUNT] = { 0 };
 int vrprofframes = 0;
 static uint64_t vrproft0 = 0;
@@ -3153,13 +3154,13 @@ void gl_drawhud()
                 {
                     lasttelemetry = totalmillis;
                     extern int androidEyeIndex;
-                    char tl[1024]; formatstring(tl, "sauvr map=%s fps=%d ms=%d best=%d worst=%d tris=%dk verts=%dk draw=%d lotes=%d va=%d gpu=%.1f comp=%.1f cpu=%.1f gpuutil=%.0f cpuutil=%.0f cpuworst=%.0f stale=%d lat=%.0f hz=%.0f fov=%d pvs=%d pvsbg=%d dyn=%d fovn=%d mv=%d glerr=%d gllast=%x",
+                    char tl[1024]; formatstring(tl, "sauvr map=%s fps=%d ms=%d best=%d worst=%d tris=%dk verts=%dk draw=%d lotes=%d va=%d gpu=%.1f comp=%.1f cpu=%.1f gpuutil=%.0f cpuutil=%.0f cpuworst=%.0f stale=%d lat=%.0f hz=%.0f fov=%d pvs=%d pvsbg=%d dyn=%d fovn=%d mv=%d glerr=%d gllast=%x rfl=%d wvis=%d wp=%d wpvs=%x",
                         game::getclientmap(), fps, ms, bestdiff, worstdiff, tris, verts, calls, batches, allocva,
                         havevr ? vm.appGpuMs : -1.0f, havevr ? vm.compGpuMs : -1.0f, havevr ? vm.appCpuMs : -1.0f,
                         havevr ? vm.gpuUtil : -1.0f, havevr ? vm.cpuUtilAvg : -1.0f, havevr ? vm.cpuUtilWorst : -1.0f,
                         havevr ? vm.droppedFrames : -1, havevr ? vm.latencyMs : -1.0f, havevr ? vm.refreshHz : -1.0f,
-                        havevr ? vm.foveationLevel : -1, getnumviewcells(), pvsbgprogress(), game::numdynents(), androidEyeIndex, vrmultiviewactive, vrglerrors, vrlastglerror);
-                    vrglerrors = 0;
+                        havevr ? vm.foveationLevel : -1, getnumviewcells(), pvsbgprogress(), game::numdynents(), androidEyeIndex, vrmultiviewactive, vrglerrors, vrlastglerror, vrreflectdraws, vrreflectvisible, getnumwaterplanes(), getcurwaterpvs());
+                    vrglerrors = 0; vrreflectdraws = 0; vrreflectvisible = 0;
                     float gwait = 0, gsubmit = 0, gtotal = 0; int gframes = android_vr_get_frametimes(&gwait, &gsubmit, &gtotal);
                     int pf = max(vrprofframes, 1);
                     char tp[512]; formatstring(tp, " frames=%d total=%.1f wait=%.1f submit=%.1f tick=%.2f cull=%.2f geom=%.2f models=%.2f refl=%.2f water=%.2f parts=%.2f hud=%.2f",
