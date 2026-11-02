@@ -3206,6 +3206,18 @@ void gl_drawhud()
                     concatstring(tl, tp);
                     memset(vrprofacc, 0, sizeof(vrprofacc)); vrprofframes = 0;
                     android_vr_telemetry(tl);
+                    // Cada 10 s: ajustes de calidad y shaders que han fallado (raíz de "se ve apagado").
+                    static int lastcfgline = 0;
+                    if(totalmillis - lastcfgline >= 10000)
+                    {
+                        lastcfgline = totalmillis;
+                        extern int shaderdetail, bumpmodels, texcompress, maxtexsize, texreduce, aniso, trilinear, glslversion, hwtexsize;
+                        char fl[700]; int nf = getfailedshaders(fl, sizeof(fl));
+                        char cl[1024];
+                        formatstring(cl, "sauvr cfg shaderdetail=%d bumpmodels=%d texcompress=%d maxtexsize=%d texreduce=%d aniso=%d trilinear=%d glsl=%d hwtex=%d shfail=%d: %s",
+                            shaderdetail, bumpmodels, texcompress, maxtexsize, texreduce, aniso, trilinear, glslversion, hwtexsize, nf, fl);
+                        android_vr_telemetry(cl);
+                    }
                 }
             }
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);

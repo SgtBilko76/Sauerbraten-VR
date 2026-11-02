@@ -152,6 +152,7 @@ extern void vrprofmark(int phase);
 extern void genpvsbackground(int cellsize);
 extern void checkpvsbackground();
 extern int pvsbgprogress();
+extern int getfailedshaders(char *buf, size_t len);
 extern int vrmultiviewactive; // 0 en escritorio
 extern int hudmatrixmode;
 #ifdef __ANDROID__
