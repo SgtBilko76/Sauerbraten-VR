@@ -14,7 +14,8 @@ const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const exe = path.join(repo, 'bin64', 'sauer_server.exe');
 if (!fs.existsSync(exe)) { console.error('falta bin64/sauer_server.exe: npm run server:build'); process.exit(1); }
 const args = process.argv.slice(2);
-const opt = (name, def) => (args.includes(name) ? args[args.indexOf(name) + 1] : (process.env['npm_config_' + name.replace(/^--/, '')] ?? def)); // npm se come los --flags: también npm_config_*
+// --n 8, --n=8 o npm_config_n=8 (npm en PowerShell convierte "--n 8" en npm_config_n=true y deja el 8 suelto: usa --n=8)
+const opt = (name, def) => { const eq = args.find((a) => a.startsWith(name + '=')); if (eq) return eq.slice(name.length + 1); if (args.includes(name)) return args[args.indexOf(name) + 1]; const env = process.env['npm_config_' + name.replace(/^--/, '')]; return env && env !== 'true' ? env : def; };
 const name = opt('--name', 'SauVREngine LAN');
 const clients = opt('--clients', '16');
 const port = opt('--port', '28785');

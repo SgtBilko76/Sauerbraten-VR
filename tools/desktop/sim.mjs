@@ -16,7 +16,8 @@ const exe = path.join(repo, 'bin64', 'sauerbraten.exe');
 const assets = path.join(repo, 'android', 'app', 'src', 'main', 'assets');
 if (!fs.existsSync(exe)) { console.error('falta bin64/sauerbraten.exe: npm run desktop:build'); process.exit(1); }
 const args = process.argv.slice(2);
-const opt = (name, def) => (args.includes(name) ? args[args.indexOf(name) + 1] : (process.env['npm_config_' + name.replace(/^--/, '')] ?? def)); // npm se come los --flags: también npm_config_*
+// --n 8, --n=8 o npm_config_n=8 (npm en PowerShell convierte "--n 8" en npm_config_n=true y deja el 8 suelto: usa --n=8)
+const opt = (name, def) => { const eq = args.find((a) => a.startsWith(name + '=')); if (eq) return eq.slice(name.length + 1); if (args.includes(name)) return args[args.indexOf(name) + 1]; const env = process.env['npm_config_' + name.replace(/^--/, '')]; return env && env !== 'true' ? env : def; };
 const n = +opt('--n', 4);
 const host = opt('--host', (() => { for (const a of Object.values(os.networkInterfaces())) for (const i of a ?? []) if (i.family === 'IPv4' && !i.internal) return i.address; return 'localhost'; })());
 const port = +opt('--port', 28785);
