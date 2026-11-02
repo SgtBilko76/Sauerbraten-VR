@@ -13,6 +13,7 @@
     "desktop:run": "node tools/desktop/run.mjs",
     "server:build": "node tools/desktop/build.mjs --server",
     "server:lan": "node tools/desktop/server.mjs",
-    "sim:lan": "node tools/desktop/sim.mjs"
+    "sim:lan": "node tools/desktop/sim.mjs",
+    "aihost:lan": "node tools/desktop/aihost.mjs"
   }
 }

@@ -145,3 +145,8 @@ Estructura sugerida: `server/go/` con `cmd/sauvr-lobby`, paquetes
   bajada por cliente (el servidor emite 33 kB/s en total), sin pérdida, y se matan
   entre ellos. Falta la otra mitad: el anfitrión de IA (el mismo headless como
   dueño de los bots del servidor, con la preferencia de dueño en `findaiclient`).
+- Paso 2 completo: **anfitrión de IA** (`npm run aihost:lan -- --bots 16`): headless
+  con admin (setmaster con la adminpass de server-init.cfg) y espectador; el servidor
+  (serveraihost 1) solo da bots a admins y reasigna los ajenos. Medido: 16 bots,
+  owned=16, 0,3 ms de IA por frame en el PC; los simulados reportan owned=0; cada
+  cliente recibe 11 kB/s. Pendiente: probar con el visor dentro (tick= debe quedar < 2 ms con 32 bots).
