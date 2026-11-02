@@ -2701,6 +2701,38 @@ void drawcrosshair(int w, int h)
         }
 #endif
     }
+#ifdef __ANDROID__
+    if(vrmultiviewactive && !mainmenu)
+    {
+        // Multiview: la mira se dibuja en el mundo, como un quad orientado a la
+        // cámara en el punto de impacto del puntero (worldpos). Así cada ojo la
+        // proyecta con su propia matriz (hudmatrixmode 2) y se funde a la
+        // profundidad de lo que apuntas; en 2D sobre el plano del HUD salía a
+        // la profundidad del plano y no cuadraba entre ojos.
+        vec pos = worldpos;
+        float dist = max(pos.dist(camera1->o), 1.0f);
+        pos.sub(vec(camdir).mul(min(dist*0.05f, 2.0f)));
+        float sz = dist*(chsize/float(h))*(androidEyeTanU - androidEyeTanD);
+        if(crosshair->type&Texture::ALPHA) glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        else glBlendFunc(GL_ONE, GL_ONE);
+        glBindTexture(GL_TEXTURE_2D, crosshair->id);
+        int oldmode = hudmatrixmode;
+        pushhudmatrix();
+        matrix4 bb(vec4(camright.x*sz, camright.y*sz, camright.z*sz, 0),
+                   vec4(camup.x*sz, camup.y*sz, camup.z*sz, 0),
+                   vec4(camdir.x, camdir.y, camdir.z, 0),
+                   vec4(pos.x, pos.y, pos.z, 1));
+        hudmatrix.mul(camprojmatrix, bb);
+        hudmatrixmode = 2;
+        flushhudmatrix();
+        hudshader->set();
+        gle::color(color);
+        hudquad(windowhit ? 0 : -0.5f, windowhit ? 0 : 0.5f, 1, -1);
+        pophudmatrix();
+        hudmatrixmode = oldmode;
+        return;
+    }
+#endif
     if(crosshair->type&Texture::ALPHA) glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     else glBlendFunc(GL_ONE, GL_ONE);
     float x = cx*w - (windowhit ? 0 : chsize/2.0f);
