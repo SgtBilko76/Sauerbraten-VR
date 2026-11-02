@@ -1047,9 +1047,7 @@ bool savepvsfile()
 void autopvs()
 {
     if(loadpvsfile()) return;
-    int cellsize = vrpvscellsize;
-    genpvs(&cellsize);
-    if(getnumviewcells() > 0) savepvsfile();
+    genpvsbackground(vrpvscellsize); // guarda el fichero al terminar (checkpvsbackground)
 }
 COMMANDN(genpvsfile, autopvs, "");
 ICOMMAND(savepvsfile, "", (), intret(savepvsfile() ? 1 : 0));

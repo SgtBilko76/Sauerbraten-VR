@@ -2911,6 +2911,9 @@ void gl_drawhud()
                     draw_text(line5, sx, sy + 4*FONTH, rc, gc, 0x60);
                     defformatstring(line6, "foveado %d%s  latencia %.0f ms  %.0f Hz", vm.foveationLevel, vm.foveationDynamic ? " din" : "", vm.latencyMs, vm.refreshHz);
                     draw_text(line6, sx, sy + 5*FONTH, 0xB0, 0xB0, 0xB0);
+                    int pvsp = pvsbgprogress();
+                    if(pvsp >= 0) { defformatstring(line7, "generando PVS en segundo plano: %d%%", pvsp); draw_text(line7, sx, sy + 6*FONTH, 0xFF, 0xC8, 0x40); }
+                    else { defformatstring(line7, "pvs celdas %d", getnumviewcells()); draw_text(line7, sx, sy + 6*FONTH, 0xB0, 0xB0, 0xB0); }
                 }
                 else draw_text("sin metricas del runtime (XR_META_performance_metrics)", sx, sy + 3*FONTH, 0x90, 0x90, 0x90);
             }

@@ -30,7 +30,11 @@ const env = { ...process.env, JAVA_HOME, ANDROID_HOME, ANDROID_SDK_ROOT: ANDROID
 const task = release ? 'assembleRelease' : 'assembleDebug';
 console.log(`> gradle ${task} en ${androidDir}`);
 const t0 = Date.now();
-const r = spawnSync(gradle, [task, '--no-daemon', '--console=plain'], { cwd: androidDir, env, stdio: 'inherit', shell: true });
+const shaPre = spawnSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: src, encoding: 'utf8' }).stdout.trim() || 'nogit';
+const vcode = Math.floor((Date.now() - Date.UTC(2026, 0, 1)) / 60000); // minutos desde 2026-01-01: crece en cada build
+const vname = '0.1.' + vcode + '-' + shaPre;
+console.log('> versionCode ' + vcode + ' versionName ' + vname);
+const r = spawnSync(gradle, [task, '--no-daemon', '--console=plain', '-Pvcode=' + vcode, '-Pvname=' + vname], { cwd: androidDir, env, stdio: 'inherit', shell: true });
 if (r.status !== 0) { console.error(`gradle falló (${r.status})`); process.exit(r.status ?? 1); }
 
 const apkDir = path.join(androidDir, 'app', 'build', 'outputs', 'apk', release ? 'release' : 'debug');

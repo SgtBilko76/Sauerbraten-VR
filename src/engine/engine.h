@@ -141,6 +141,9 @@ extern void clearpvs();
 extern bool loadpvsfile();
 extern bool savepvsfile();
 extern void autopvs();
+extern void genpvsbackground(int cellsize);
+extern void checkpvsbackground();
+extern int pvsbgprogress();
 extern void loadpvs(stream *f, int numpvs);
 extern int getnumviewcells();
 

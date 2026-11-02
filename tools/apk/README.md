@@ -42,3 +42,24 @@ portada (`renderbackground` en `src/engine/main.cpp`, texto bajo el logo), el
 título de la ventana SDL, los errores fatales y el menú `about`
 (`data/menus.cfg`, que hay que copiar a `android/app/src/main/assets/data/`).
 El nombre de la app Android está en `android/app/src/main/res/values/strings.xml`.
+
+## PVS precalculado
+
+Los mapas de Sauerbraten casi nunca traen PVS y en Android no hay oclusión por
+hardware, así que sin él se dibuja todo el frustum. El juego lo genera en segundo
+plano al entrar en un mapa sin PVS y lo guarda como `packages/base/<mapa>.pvs`
+en su almacenamiento interno. Para que la APK lo lleve ya calculado:
+
+```bash
+npm run apk:pull-pvs           # Quest por USB: copia los .pvs del visor a assets/packages/base/
+npm run apk:build              # la siguiente APK los incluye y no vuelve a generarlos
+```
+
+El fichero lleva el crc del mapa: si el mapa cambia, se descarta y se regenera.
+
+## versionCode y assets
+
+`SauerQuestActivity` solo vuelve a extraer `assets/` al almacenamiento interno
+cuando cambia el `versionCode`. Por eso `build-apk.mjs` pasa `-Pvcode` (minutos
+desde 2026-01-01) y `-Pvname` (versión + sha) a Gradle en cada build: sin eso,
+los cambios en `data/` o `packages/` no llegan al visor al actualizar la APK.

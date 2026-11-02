@@ -6,6 +6,7 @@
   "description": "SauVREngine: motor VR nativo (OpenXR) para Quest, basado en Cube 2: Sauerbraten. Scripts para compilar la APK y servirla al visor.",
   "scripts": {
     "apk:build": "node tools/apk/build-apk.mjs",
-    "apk:serve": "node tools/apk/serve.mjs"
+    "apk:serve": "node tools/apk/serve.mjs",
+    "apk:pull-pvs": "node tools/apk/pull-pvs.mjs"
   }
 }
