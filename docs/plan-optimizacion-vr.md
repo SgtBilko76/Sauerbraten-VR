@@ -23,6 +23,17 @@ Leído en `android/app/src/main/cpp/vr_glue/` y `src/engine/`:
 | Refresco | `XR_FB_display_refresh_rate` enumerado, 72 Hz | Ok |
 | Métricas | Solo fps del motor; nada de GPU | Añadido en fase 0 |
 | Iluminación | Lightmaps horneados + `maxdynlights 3` | Barato |
+| PVS del mapa | **duel7 no trae PVS** (`numpvs 0`; en upstream solo metl4 lo tiene) | Sin PVS ni oclusión, una pared no oculta nada: se dibuja todo el frustum |
+
+Medición del usuario (2026-11-01, duel7, foveado 3): 41 fps / 23 ms mirando
+al mapa e incluso a una pared; solo mejora en zonas con poca geometría. Encaja
+con el coste fijo de dibujar todo el frustum dos veces más el agua.
+
+Hecho en fase 0b: PVS automático en Android (`vrautopvs`, `src/engine/worldio.cpp`):
+al cargar un mapa sin PVS se genera (celdas de 32) y se guarda como
+`packages/base/<mapa>.pvs` con el crc del mapa; en cargas siguientes se lee.
+Pestaña **opciones → vr** con todos los interruptores de prueba (agua, partículas,
+luces, shaders, foveado, PVS) para medir desde el visor.
 
 Conclusión: el motor repite trabajo por ojo y no tenía cómo saber si el límite
 es CPU o GPU. Antes de tocar el renderer hay que medir.
@@ -115,3 +126,4 @@ De la conversación de diseño (mundo abierto, contrato hexagonal, servidor):
 | Fecha | Build | Escena | fps | gpu app | cpu app | stale | tris | draw | Notas |
 |---|---|---|---|---|---|---|---|---|---|
 | 2026-11-01 | f316ee9 | duel7 | "medio" (sin cifras) | — | — | — | — | — | antes de vrstats |
+| 2026-11-01 | 3db2294 | duel7, mirando mapa o pared | 41 | — | — | — | — | — | foveado 3; faltan gpu/cpu app |
