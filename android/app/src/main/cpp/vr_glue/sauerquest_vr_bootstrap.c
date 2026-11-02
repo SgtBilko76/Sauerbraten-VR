@@ -28,6 +28,7 @@
 #include "VrCommon.h"
 #include "androidbridge.h"
 #include "VrPerf.h"
+#include "VrTelemetry.h"
 
 /* Same local definition TBXR_Common.c uses (DarkPlaces normally pulls
  * this in transitively via its own mathlib.h). */
@@ -466,6 +467,11 @@ void android_vr_set_foveation(int level, int dynamic)
     VrPerf_SetFoveation(level, dynamic);
 }
 
+void android_vr_telemetry(const char *line)
+{
+    VrTelemetry_Send(line);
+}
+
 void *AppThreadFunction(void *parm)
 {
     gAppThread = (ovrAppThread *)parm;
@@ -574,6 +580,7 @@ void *AppThreadFunction(void *parm)
                 float dy = -xfHeadFromEye.position.z;
                 float dz =  xfHeadFromEye.position.y;
 
+                android_sauer_set_eye_index(eye);
                 android_sauer_set_eye(dx, dy, dz,
                     hmdorientation[1], hmdorientation[0], hmdorientation[2],
                     tanf(fov.angleLeft), tanf(fov.angleRight), tanf(fov.angleUp), tanf(fov.angleDown));

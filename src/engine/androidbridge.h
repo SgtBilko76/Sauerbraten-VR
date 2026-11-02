@@ -52,6 +52,11 @@ typedef struct {
 } android_vr_metrics;
 int android_vr_get_metrics(android_vr_metrics *m);
 void android_vr_set_foveation(int level, int dynamic);
+/* Telemetría: una línea de texto por UDP broadcast al PC (vr_glue/VrTelemetry.c). */
+void android_vr_telemetry(const char *line);
+/* Ojo que se está dibujando (0 izquierdo, 1 derecho); lo pone el bucle VR antes de
+ * cada android_sauer_drawframe(). Lo usan los pases que se comparten entre ojos. */
+void android_sauer_set_eye_index(int eye);
 
 // Implemented in rendergl.cpp; called once per eye, immediately before
 // android_sauer_drawframe(), to report that eye's real OpenXR pose/FOV

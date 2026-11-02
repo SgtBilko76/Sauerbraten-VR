@@ -8,6 +8,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import dgram from 'node:dgram';
 import { fileURLToPath } from 'node:url';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -99,10 +100,31 @@ function serveApk(req, res, name) {
   });
 }
 
+// Telemetría del visor: el motor manda por UDP broadcast (puerto 5231) una línea
+// por segundo; se imprime, se guarda en memoria (GET /telemetry?n=60) y en
+// dist/telemetry.log para analizarla después.
+const telemetry = [];
+const telemetryLog = path.join(repo, 'dist', 'telemetry.log');
+const udp = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+udp.on('message', (msg, rinfo) => {
+  const line = `${new Date().toISOString().slice(11, 19)} ${rinfo.address} ${msg.toString().trim()}`;
+  telemetry.push(line);
+  if (telemetry.length > 3600) telemetry.shift();
+  console.log(line);
+  fs.appendFile(telemetryLog, line + '\n', () => {});
+});
+udp.on('error', (e) => console.error('telemetría UDP:', e.message));
+udp.bind(5231, '0.0.0.0');
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url ?? '/', 'http://x');
   console.log(new Date().toLocaleTimeString(), req.socket.remoteAddress, req.method, url.pathname, req.headers.range ?? '');
   if (url.pathname === '/' || url.pathname === '/index.html') return index(res, req);
+  if (url.pathname === '/telemetry') {
+    const n = Number(url.searchParams.get('n') ?? 60);
+    res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
+    return res.end(telemetry.slice(-n).join('\n') + '\n');
+  }
   if (url.pathname === '/apks.json') {
     res.writeHead(200, { 'content-type': 'application/json' });
     return res.end(JSON.stringify(listApks()));
@@ -115,6 +137,7 @@ const server = http.createServer((req, res) => {
 
 server.listen(port, host, () => {
   console.log(`APK server: carpeta ${dir}`);
+  console.log('  telemetría: UDP 5231 → GET /telemetry?n=60 y dist/telemetry.log');
   console.log(`  local:  http://localhost:${port}/`);
   for (const ip of lanIps()) console.log(`  red:    http://${ip}:${port}/   (abrir en el navegador del visor)`);
   for (const a of listApks()) console.log(`  - ${a.name} (${fmt(a.size)})`);

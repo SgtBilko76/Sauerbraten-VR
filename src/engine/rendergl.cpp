@@ -728,6 +728,9 @@ static float androidEyeTanL = -1, androidEyeTanR = 1, androidEyeTanU = 1, androi
 // 8.5) than 10 was.
 VAR(vrworldscale, 1, 8, 1000);
 
+int androidEyeIndex = 0;
+void android_sauer_set_eye_index(int eye) { androidEyeIndex = eye; }
+
 void android_sauer_set_eye(float dx, float dy, float dz,
                             float yaw, float pitch, float roll,
                             float tanLeft, float tanRight, float tanUp, float tanDown)
@@ -2623,6 +2626,10 @@ VARP(showfps, 0, 1, 1);
 #endif
 // Panel de métricas en el HUD VR: 0 nada, 1 fps y ms, 2 también tris/verts/draw calls.
 VARP(vrstats, 0, 2, 2);
+#ifdef __ANDROID__
+// Telemetría UDP al PC (serve.mjs la recoge): 0 no, 1 una línea por segundo.
+VARP(vrtelemetry, 0, 1, 1);
+#endif
 // Tamaño del panel: 1 = misma escala que el HUD de juego (h/1800); 1.5 por defecto para VR.
 FVARP(vrstatsscale, 0.5f, 1.5f, 4.0f);
 #ifdef __ANDROID__
@@ -2883,6 +2890,19 @@ void gl_drawhud()
                 tris = (vtris + xtraverts/3)/1000; verts = (vverts + xtraverts)/1000;
                 calls = glde; batches = gbatches;
                 havevr = android_vr_get_metrics(&vm);
+                static int lasttelemetry = 0;
+                if(vrtelemetry && totalmillis - lasttelemetry >= 1000)
+                {
+                    lasttelemetry = totalmillis;
+                    extern int androidEyeIndex;
+                    defformatstring(tl, "sauvr map=%s fps=%d ms=%d best=%d worst=%d tris=%dk verts=%dk draw=%d lotes=%d va=%d gpu=%.1f comp=%.1f cpu=%.1f gpuutil=%.0f cpuutil=%.0f cpuworst=%.0f stale=%d lat=%.0f hz=%.0f fov=%d pvs=%d pvsbg=%d dyn=%d fovn=%d",
+                        game::getclientmap(), fps, ms, bestdiff, worstdiff, tris, verts, calls, batches, allocva,
+                        havevr ? vm.appGpuMs : -1.0f, havevr ? vm.compGpuMs : -1.0f, havevr ? vm.appCpuMs : -1.0f,
+                        havevr ? vm.gpuUtil : -1.0f, havevr ? vm.cpuUtilAvg : -1.0f, havevr ? vm.cpuUtilWorst : -1.0f,
+                        havevr ? vm.droppedFrames : -1, havevr ? vm.latencyMs : -1.0f, havevr ? vm.refreshHz : -1.0f,
+                        havevr ? vm.foveationLevel : -1, getnumviewcells(), pvsbgprogress(), game::numdynents(), androidEyeIndex);
+                    android_vr_telemetry(tl);
+                }
             }
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
             pushhudmatrix();

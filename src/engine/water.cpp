@@ -954,9 +954,20 @@ static bool calcscissorbox(Reflection &ref, int size, vec &clipmin, vec &clipmax
 
 VARR(refractclear, 0, 0, 1);
 
+#ifdef __ANDROID__
+// Reflejo y refracción del agua se renderizan una vez por frame (ojo izquierdo) y
+// el ojo derecho reutiliza las texturas: el desfase de ~6 cm entre ojos es
+// inapreciable en un plano de agua y ahorra hasta 4 renders de escena por frame.
+VARP(vrsharereflections, 0, 1, 1);
+extern int androidEyeIndex;
+#endif
+
 void drawreflections()
 {
     if((editmode && showmat && !drawtex) || drawtex == DRAWTEX_MINIMAP) return;
+#ifdef __ANDROID__
+    if(vrsharereflections && androidEyeIndex > 0 && !drawtex) return;
+#endif
 
     static int lastdrawn = 0;
     int refs = 0, n = lastdrawn;

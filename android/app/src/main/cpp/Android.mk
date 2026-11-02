@@ -165,7 +165,8 @@ LOCAL_SRC_FILES := \
     vr_glue/TBXR_Common.c \
     vr_glue/OpenXrInput.c \
     vr_glue/sauerquest_vr_bootstrap.c \
-    vr_glue/VrPerf.c
+    vr_glue/VrPerf.c \
+    vr_glue/VrTelemetry.c
 
 LOCAL_CFLAGS := -Wall -Wno-unused-variable -Wno-unused-function
 
