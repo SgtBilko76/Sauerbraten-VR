@@ -1589,9 +1589,18 @@ static inline int setcubevisibility(cube &c, const ivec &co, int size)
     return numvis;
 }
 
+#ifdef __ANDROID__
+// SauVREngine: el límite en Quest es la CPU por draw call (350 draws para 20k
+// tris en duel7). VAs más grandes = menos VAs = menos lotes por textura; el
+// PVS sigue recortando por VA y la GPU tiene margen para el sobrante.
+VARF(vafacemax, 64, 1024, 256*256, allchanged());
+VARF(vafacemin, 0, 256, 256*256, allchanged());
+VARF(vacubesize, 32, 256, 0x1000, allchanged());
+#else
 VARF(vafacemax, 64, 384, 256*256, allchanged());
 VARF(vafacemin, 0, 96, 256*256, allchanged());
 VARF(vacubesize, 32, 128, 0x1000, allchanged());
+#endif
 
 int updateva(cube *c, const ivec &co, int size, int csi)
 {

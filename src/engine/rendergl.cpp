@@ -1678,6 +1678,7 @@ void drawglare()
     renderwater();
     rendermaterials();
     renderalphageom();
+    vrprofmark(VRP_WATER);
     renderparticles();
 
     popfogcolor();
@@ -1858,7 +1859,9 @@ void drawcubemap(int size, const vec &o, float yaw, float pitch, const cubemapsi
 
     xtravertsva = xtraverts = glde = gbatches = 0;
 
+    vrprofstart();
     visiblecubes();
+    vrprofmark(VRP_CULL);
 
     if(onlysky) drawskybox(farplane, false, true);
     else
@@ -1880,6 +1883,7 @@ void drawcubemap(int size, const vec &o, float yaw, float pitch, const cubemapsi
         renderalphageom();
 
 //      drawreflections();
+    vrprofmark(VRP_REFLECT);
 
 //      renderwater();
 //      rendermaterials();
@@ -2258,6 +2262,7 @@ void gl_drawframe()
     if(limitsky()) drawskybox(farplane, true);
 
     rendergeom(causticspass);
+    vrprofmark(VRP_GEOM);
 
     extern int outline;
     if(!wireframe && editmode && outline) renderoutline();
@@ -2273,6 +2278,7 @@ void gl_drawframe()
     rendermapmodels();
     rendergame(true);
     renderavatar();
+    vrprofmark(VRP_MODELS);
 
     if(wireframe && editmode) glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
@@ -2291,6 +2297,7 @@ void gl_drawframe()
     if(wireframe && editmode) glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
     renderparticles(true);
+    vrprofmark(VRP_PARTS);
 
     glDisable(GL_CULL_FACE);
     glDisable(GL_DEPTH_TEST);
@@ -2301,6 +2308,7 @@ void gl_drawframe()
     renderpostfx();
 
     gl_drawhud();
+    vrprofmark(VRP_HUD);
 
     renderedgame = false;
 }
@@ -2625,6 +2633,17 @@ VARP(showfps, 0, 0, 1); // en VR lo sustituye vrstats (plano anclado a la cabeza
 VARP(showfps, 0, 1, 1);
 #endif
 // Panel de métricas en el HUD VR: 0 nada, 1 fps y ms, 2 también tris/verts/draw calls.
+uint64_t vrprofacc[VRP_COUNT] = { 0 };
+int vrprofframes = 0;
+static uint64_t vrproft0 = 0;
+void vrprofstart() { vrproft0 = SDL_GetPerformanceCounter(); }
+void vrprofmark(int phase)
+{
+    uint64_t t = SDL_GetPerformanceCounter();
+    vrprofacc[phase] += (t - vrproft0) * 1000000 / SDL_GetPerformanceFrequency();
+    vrproft0 = t;
+}
+
 VARP(vrstats, 0, 2, 2);
 #ifdef __ANDROID__
 // Telemetría UDP al PC (serve.mjs la recoge): 0 no, 1 una línea por segundo.
@@ -2895,12 +2914,20 @@ void gl_drawhud()
                 {
                     lasttelemetry = totalmillis;
                     extern int androidEyeIndex;
-                    defformatstring(tl, "sauvr map=%s fps=%d ms=%d best=%d worst=%d tris=%dk verts=%dk draw=%d lotes=%d va=%d gpu=%.1f comp=%.1f cpu=%.1f gpuutil=%.0f cpuutil=%.0f cpuworst=%.0f stale=%d lat=%.0f hz=%.0f fov=%d pvs=%d pvsbg=%d dyn=%d fovn=%d",
+                    char tl[1024]; formatstring(tl, "sauvr map=%s fps=%d ms=%d best=%d worst=%d tris=%dk verts=%dk draw=%d lotes=%d va=%d gpu=%.1f comp=%.1f cpu=%.1f gpuutil=%.0f cpuutil=%.0f cpuworst=%.0f stale=%d lat=%.0f hz=%.0f fov=%d pvs=%d pvsbg=%d dyn=%d fovn=%d",
                         game::getclientmap(), fps, ms, bestdiff, worstdiff, tris, verts, calls, batches, allocva,
                         havevr ? vm.appGpuMs : -1.0f, havevr ? vm.compGpuMs : -1.0f, havevr ? vm.appCpuMs : -1.0f,
                         havevr ? vm.gpuUtil : -1.0f, havevr ? vm.cpuUtilAvg : -1.0f, havevr ? vm.cpuUtilWorst : -1.0f,
                         havevr ? vm.droppedFrames : -1, havevr ? vm.latencyMs : -1.0f, havevr ? vm.refreshHz : -1.0f,
                         havevr ? vm.foveationLevel : -1, getnumviewcells(), pvsbgprogress(), game::numdynents(), androidEyeIndex);
+                    float gwait = 0, gsubmit = 0, gtotal = 0; int gframes = android_vr_get_frametimes(&gwait, &gsubmit, &gtotal);
+                    int pf = max(vrprofframes, 1);
+                    char tp[512]; formatstring(tp, " frames=%d total=%.1f wait=%.1f submit=%.1f tick=%.2f cull=%.2f geom=%.2f models=%.2f refl=%.2f water=%.2f parts=%.2f hud=%.2f",
+                        gframes, gtotal, gwait, gsubmit,
+                        vrprofacc[VRP_TICK]/1000.0f/pf, vrprofacc[VRP_CULL]/1000.0f/pf, vrprofacc[VRP_GEOM]/1000.0f/pf, vrprofacc[VRP_MODELS]/1000.0f/pf,
+                        vrprofacc[VRP_REFLECT]/1000.0f/pf, vrprofacc[VRP_WATER]/1000.0f/pf, vrprofacc[VRP_PARTS]/1000.0f/pf, vrprofacc[VRP_HUD]/1000.0f/pf);
+                    concatstring(tl, tp);
+                    memset(vrprofacc, 0, sizeof(vrprofacc)); vrprofframes = 0;
                     android_vr_telemetry(tl);
                 }
             }
@@ -2934,6 +2961,15 @@ void gl_drawhud()
                     int pvsp = pvsbgprogress();
                     if(pvsp >= 0) { defformatstring(line7, "generando PVS en segundo plano: %d%%", pvsp); draw_text(line7, sx, sy + 6*FONTH, 0xFF, 0xC8, 0x40); }
                     else { defformatstring(line7, "pvs celdas %d", getnumviewcells()); draw_text(line7, sx, sy + 6*FONTH, 0xB0, 0xB0, 0xB0); }
+                    static string line8; static int lastprof = 0;
+                    if(totalmillis - lastprof >= 500 && vrprofframes > 0)
+                    {
+                        lastprof = totalmillis; int pf = vrprofframes;
+                        formatstring(line8, "cpu ms/frame: tick %.1f cull %.1f geom %.1f mod %.1f refl %.1f agua %.1f part %.1f hud %.1f",
+                            vrprofacc[VRP_TICK]/1000.0f/pf, vrprofacc[VRP_CULL]/1000.0f/pf, vrprofacc[VRP_GEOM]/1000.0f/pf, vrprofacc[VRP_MODELS]/1000.0f/pf,
+                            vrprofacc[VRP_REFLECT]/1000.0f/pf, vrprofacc[VRP_WATER]/1000.0f/pf, vrprofacc[VRP_PARTS]/1000.0f/pf, vrprofacc[VRP_HUD]/1000.0f/pf);
+                    }
+                    draw_text(line8, sx, sy + 7*FONTH, 0xB0, 0xB0, 0xB0);
                 }
                 else draw_text("sin metricas del runtime (XR_META_performance_metrics)", sx, sy + 3*FONTH, 0x90, 0x90, 0x90);
             }

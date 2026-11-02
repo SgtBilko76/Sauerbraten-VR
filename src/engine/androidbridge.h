@@ -57,6 +57,10 @@ void android_vr_telemetry(const char *line);
 /* Ojo que se está dibujando (0 izquierdo, 1 derecho); lo pone el bucle VR antes de
  * cada android_sauer_drawframe(). Lo usan los pases que se comparten entre ojos. */
 void android_sauer_set_eye_index(int eye);
+/* Tiempos medios por frame (ms) del bucle VR desde la última llamada: espera en
+ * xrWaitFrame (TBXR_FrameSetup), xrEndFrame (TBXR_submitFrame) y frame completo.
+ * Devuelve el número de frames acumulados y pone los acumuladores a cero. */
+int android_vr_get_frametimes(float *waitms, float *submitms, float *totalms);
 
 // Implemented in rendergl.cpp; called once per eye, immediately before
 // android_sauer_drawframe(), to report that eye's real OpenXR pose/FOV

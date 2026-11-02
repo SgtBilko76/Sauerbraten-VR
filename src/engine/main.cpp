@@ -1163,7 +1163,10 @@ static void gamerender()
 #ifdef __ANDROID__
 void android_sauer_tick(void)
 {
+    vrprofstart();
     gametick();
+    vrprofmark(VRP_TICK);
+    vrprofframes++;
 }
 
 void android_sauer_drawframe(void)

@@ -29,6 +29,17 @@
 #include "androidbridge.h"
 #include "VrPerf.h"
 #include "VrTelemetry.h"
+#include <time.h>
+
+static double vrGlueWait = 0, vrGlueSubmit = 0, vrGlueTotal = 0; static int vrGlueFrames = 0;
+static double nowms(void) { struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts); return ts.tv_sec * 1000.0 + ts.tv_nsec / 1e6; }
+int android_vr_get_frametimes(float *waitms, float *submitms, float *totalms)
+{
+    int n = vrGlueFrames > 0 ? vrGlueFrames : 1;
+    *waitms = (float)(vrGlueWait / n); *submitms = (float)(vrGlueSubmit / n); *totalms = (float)(vrGlueTotal / n);
+    int frames = vrGlueFrames; vrGlueWait = vrGlueSubmit = vrGlueTotal = 0; vrGlueFrames = 0;
+    return frames;
+}
 
 /* Same local definition TBXR_Common.c uses (DarkPlaces normally pulls
  * this in transitively via its own mathlib.h). */
@@ -518,8 +529,11 @@ void *AppThreadFunction(void *parm)
 
     ALOGV("SauerQuest VR bootstrap: engine booted, entering frame loop");
 
+    double vrFrameStart = nowms();
     while (runStatus == -1) {
+        double t0 = nowms();
         TBXR_FrameSetup();
+        double t1 = nowms(); vrGlueWait += t1 - t0;
 
         android_sauer_tick();
 
@@ -591,7 +605,9 @@ void *AppThreadFunction(void *parm)
 
         android_sauer_endframe();
 
+        double t2 = nowms();
         TBXR_submitFrame();
+        double t3 = nowms(); vrGlueSubmit += t3 - t2; vrGlueTotal += t3 - vrFrameStart; vrFrameStart = t3; vrGlueFrames++;
     }
 
     TBXR_LeaveVR();
