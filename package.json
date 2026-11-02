@@ -12,6 +12,7 @@
     "pvs:bake": "node tools/desktop/bake-pvs.mjs",
     "desktop:run": "node tools/desktop/run.mjs",
     "server:build": "node tools/desktop/build.mjs --server",
-    "server:lan": "node tools/desktop/server.mjs"
+    "server:lan": "node tools/desktop/server.mjs",
+    "sim:lan": "node tools/desktop/sim.mjs"
   }
 }

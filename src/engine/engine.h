@@ -146,6 +146,7 @@ extern void autopvs();
 // microsegundos por fase; la telemetría lo vuelca y lo pone a cero cada segundo.
 enum { VRP_TICK = 0, VRP_CULL, VRP_GEOM, VRP_MODELS, VRP_REFLECT, VRP_WATER, VRP_ALPHA, VRP_PARTS, VRP_HUD, VRP_COUNT };
 extern uint64_t vrprofacc[VRP_COUNT];
+extern int headless; // -H: sin pantalla (main.cpp)
 extern int vrprofframes;
 extern void vrprofstart();
 extern void vrprofmark(int phase);

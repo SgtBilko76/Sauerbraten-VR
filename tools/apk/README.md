@@ -108,3 +108,19 @@ En el visor: menú principal → **lan connect** (descubrimiento por broadcast) 
 (`-xconnect localhost`). Windows Firewall ya tiene regla para sauer_server.exe
 (si la borras, el primer arranque vuelve a pedirla). Los bots que se añadan
 desde el visor los piensa el visor hasta el paso 2 (anfitrión de IA headless).
+
+## Clientes simulados (carga de red real contra el servidor)
+
+```
+npm run sim:lan -- --n 8 --host 192.168.100.21 --seconds 120 --skill 60
+```
+
+Lanza N procesos de `bin64/sauerbraten.exe -H` (sin pantalla: ventana oculta,
+sin dibujar ni sonar, 60 ticks/s) con `simplayer 1`: cada uno es un cliente ENet
+de verdad cuyo jugador lo mueve la IA de los bots (waypoints, ítems, disparos).
+Cada segundo escriben `sim t= map= cn= rtt= loss= tx= rx= pos= …` en
+`dist/sim/home-N/log.txt`; el lanzador imprime la tabla cada 5 s y deja
+`dist/sim/resumen.json` (rtt medio y máximo, pérdida, kB/s por cliente y total).
+Medido en el PC: ~1 kB/s de subida y ~2 kB/s de bajada por cliente, 22 ms de RTT.
+Trampa: `ai::navigate` solo asigna nodos si algún jugador tiene `aitype != AI_NONE`,
+por eso el simulado se marca como AI_BOT.

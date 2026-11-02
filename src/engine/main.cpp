@@ -710,6 +710,7 @@ void setupscreen()
     }
 
     int winx = SDL_WINDOWPOS_UNDEFINED, winy = SDL_WINDOWPOS_UNDEFINED, winw = scr_w, winh = scr_h, flags = SDL_WINDOW_RESIZABLE;
+    if(headless) flags |= SDL_WINDOW_HIDDEN;
     if(fullscreen)
     {
         if(fullscreendesktop)
@@ -1369,6 +1370,11 @@ int getclockmillis()
 
 VAR(numcpus, 1, 1, 256);
 
+// SauVREngine: -H = sin pantalla (ventana oculta con contexto GL, no se dibuja ni
+// suena, 60 ticks/s). Para clientes simulados y para el anfitrión de IA del
+// servidor dedicado (docs/servidor-dedicado.md).
+int headless = 0;
+
 int main(int argc, char **argv)
 {
     #ifdef WIN32
@@ -1414,6 +1420,7 @@ int main(int argc, char **argv)
             case 'w': scr_w = clamp(atoi(&argv[i][2]), SCR_MINW, SCR_MAXW); if(!findarg(argc, argv, "-h")) scr_h = -1; break;
             case 'h': scr_h = clamp(atoi(&argv[i][2]), SCR_MINH, SCR_MAXH); if(!findarg(argc, argv, "-w")) scr_w = -1; break;
             case 'z': depthbits = atoi(&argv[i][2]); break;
+            case 'H': headless = 1; break;
             case 'b': /* compat, ignore */ break;
             case 'a': fsaa = atoi(&argv[i][2]); break;
             case 'v': /* compat, ignore */ break;
@@ -1499,7 +1506,7 @@ int main(int argc, char **argv)
     emptymap(0, true, NULL, false);
 
     logoutf("init: sound");
-    initsound();
+    if(!headless) initsound(); else logoutf("headless: sin sonido ni dibujo");
 
     logoutf("init: cfg");
     initing = INIT_LOAD;
@@ -1521,6 +1528,7 @@ int main(int argc, char **argv)
         writecfg(game::restoreconfig());
     }
     execfile(game::autoexec(), false);
+    if(headless) execute("maxfps 60");
 #ifdef __ANDROID__
     {
         // El config.cfg del visor pudo guardar "shadowmap 1" (lo forzaba gl_checkextensions
@@ -1576,6 +1584,7 @@ int main(int argc, char **argv)
     for(;;)
     {
         gametick();
+        if(headless) { SDL_Delay(1); continue; } // sin dibujar; limitfps (maxfps 60) marca el ritmo
         if(minimized) continue;
         inbetweenframes = false;
         gamerender();
