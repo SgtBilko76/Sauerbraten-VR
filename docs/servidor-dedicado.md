@@ -134,3 +134,14 @@ Estructura sugerida: `server/go/` con `cmd/sauvr-lobby`, paquetes
   nota; en internet depende del VPS.
 - Trampas: un cliente humano que se conecte sin host se convertiría en dueño de
   bots; `aihostonly 1` evita que el visor herede IA.
+
+## 7. Estado (2026-11-02)
+
+- Paso 1 hecho: `npm run server:build` / `npm run server:lan`; el visor jugó en el
+  servidor (telemetría `net=192.168.100.21:28785`, 20 ms de RTT).
+- Paso 2, mitad hecha: build sin pantalla (`-H`) y **clientes simulados**
+  (`npm run sim:lan -- --n 8`): cada uno es un cliente ENet real movido por la IA
+  de los bots. Medido con 8 en el PC: RTT 15 ms, 1,2 kB/s de subida y 4,1 kB/s de
+  bajada por cliente (el servidor emite 33 kB/s en total), sin pérdida, y se matan
+  entre ellos. Falta la otra mitad: el anfitrión de IA (el mismo headless como
+  dueño de los bots del servidor, con la preferencia de dueño en `findaiclient`).

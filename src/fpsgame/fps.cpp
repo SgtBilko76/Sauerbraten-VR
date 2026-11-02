@@ -1,5 +1,8 @@
 #include "game.h"
 
+// SauVREngine: conexión del cliente (engine/client.cpp) para las estadísticas del jugador simulado
+extern ENetPeer *curpeer; extern ENetHost *clienthost;
+
 namespace game
 {
     bool intermission = false;
@@ -235,6 +238,43 @@ namespace game
         }
     }
 
+    // Jugador simulado (clientes de carga para el servidor dedicado): player1 lo mueve
+    // la misma IA que los bots (ai::update lo piensa porque players[0] es player1 y
+    // tiene ai), con su propia conexión ENet, posiciones, ping y pérdida reales.
+    // Cada segundo escribe una línea "sim ..." en el log (-g) que lee tools/desktop/sim.mjs.
+    VAR(simplayer, 0, 0, 1);
+    VAR(simskill, 1, 60, 100);
+    static void updatesimplayer()
+    {
+        if(!simplayer || !connected)
+        {
+            if(player1->ai && !simplayer) { delete player1->ai; player1->ai = NULL; }
+            return;
+        }
+        if(!player1->ai)
+        {
+            ai::loadwaypoints();
+            player1->ai = new ai::aiinfo;
+            player1->skill = simskill;
+            player1->aitype = AI_BOT; // ai::navigate solo asigna nodos si hay algún jugador con aitype
+            player1->ai->views[0] = ai::viewfieldx(player1->skill);
+            player1->ai->views[1] = ai::viewfieldy(player1->skill);
+            player1->ai->views[2] = ai::viewdist(player1->skill);
+            conoutf("jugador simulado: la IA mueve a %s (skill %d)", player1->name, player1->skill);
+        }
+        static int lastsim = 0; static uint lasttx = 0, lastrx = 0;
+        if(totalmillis - lastsim >= 1000)
+        {
+            lastsim = totalmillis;
+            uint tx = clienthost ? clienthost->totalSentData : 0, rx = clienthost ? clienthost->totalReceivedData : 0;
+            logoutf("sim t=%d map=%s cn=%d st=%d rtt=%u loss=%.1f tx=%u rx=%u pos=%.0f,%.0f,%.0f node=%d aist=%d mv=%d,%d yaw=%.0f/%.0f frags=%d deaths=%d",
+                totalmillis/1000, getclientmap(), player1->clientnum, player1->state,
+                curpeer ? curpeer->roundTripTime : 0, curpeer ? curpeer->packetLoss*100.0f/ENET_PEER_PACKET_LOSS_SCALE : 0.0f,
+                tx - lasttx, rx - lastrx, player1->o.x, player1->o.y, player1->o.z, player1->lastnode, player1->ai->state.empty() ? -1 : player1->ai->getstate().type, player1->move, player1->strafe, player1->yaw, player1->ai->targyaw, player1->frags, player1->deaths);
+            lasttx = tx; lastrx = rx;
+        }
+    }
+
     void updateworld()        // main game update loop
     {
         if(!maptime) { maptime = lastmillis; maprealtime = totalmillis; return; }
@@ -248,12 +288,13 @@ namespace game
         }
         updateweapons(curtime);
         otherplayers(curtime);
+        updatesimplayer();
         ai::update();
         moveragdolls();
         gets2c();
         updatemovables(curtime);
         updatemonsters(curtime);
-        if(connected)
+        if(connected && !player1->ai) // con simplayer, ai::logic ya mueve a player1
         {
             if(player1->state == CS_DEAD)
             {
