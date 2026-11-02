@@ -472,8 +472,6 @@ void Shader::allocparams(Slot *slot)
                 }
             }
         }
-        // sin textura u, la capa de detalle usa la unidad 0 (diffuse) y no cambia nada
-        if(!stex) UNIFORMTEX("stex0", 0);
     }
     allocglslactiveuniforms(*this);
 }
