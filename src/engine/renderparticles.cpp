@@ -1103,6 +1103,11 @@ static inline particle *newparticle(const vec &o, const vec &d, int fade, int ty
 
 #ifdef __ANDROID__
 VARP(maxparticledistance, 256, 768, 4096);
+// Presupuesto de emisores de mapa (antorchas, humo, fuego): ruebli tiene 263 y
+// cada uno cuesta raycube + partículas vivas por frame (fase parts 10-12 ms).
+// Solo emiten los vrmaxemitters más cercanos dentro de vremitterdist.
+VARP(vrmaxemitters, 4, 32, 512);
+VARP(vremitterdist, 128, 512, 4096);
 #else
 VARP(maxparticledistance, 256, 1024, 4096);
 #endif
@@ -1520,11 +1525,31 @@ void updateparticles()
     {
         int emitted = 0, replayed = 0;
         addedparticles = 0;
+#ifdef __ANDROID__
+        // orden por distancia y tope: los emisores que no entran se tratan como lejanos
+        static vector<int> order; static vector<float> dists; order.setsize(0); dists.setsize(0);
+        loopv(emitters)
+        {
+            particleemitter &pe = emitters[i];
+            float d = pe.ent->o.dist(camera1->o);
+            if(d > maxparticledistance || d > vremitterdist) { pe.lastemit = lastmillis; continue; }
+            int k = order.length(); order.add(i); dists.add(d);
+            while(k > 0 && dists[k-1] > dists[k]) { swap(dists[k-1], dists[k]); swap(order[k-1], order[k]); k--; }
+        }
+        for(int oi = vrmaxemitters; oi < order.length(); oi++) emitters[order[oi]].lastemit = lastmillis;
+        if(order.length() > vrmaxemitters) order.setsize(vrmaxemitters);
+        loopvj(order)
+        {
+            int i = order[j];
+            particleemitter &pe = emitters[i];
+            extentity &e = *pe.ent;
+#else
         loopv(emitters)
         {
             particleemitter &pe = emitters[i];
             extentity &e = *pe.ent;
             if(e.o.dist(camera1->o) > maxparticledistance) { pe.lastemit = lastmillis; continue; }
+#endif
             if(cullparticles && pe.maxfade >= 0)
             {
                 if(isfoggedsphere(pe.radius, pe.center)) { pe.lastcull = lastmillis; continue; }

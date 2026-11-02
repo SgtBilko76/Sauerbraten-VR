@@ -1847,5 +1847,6 @@ ICOMMAND(mapdeps, "", (), {
     loopv(ents) if(ents[i]->type==ET_MAPMODEL && models.find(ents[i]->attr2) < 0) models.add(ents[i]->attr2);
     loopv(models) if(mapmodels.inrange(models[i])) conoutf("dep model %s", mapmodels[models[i]].name);
     conoutf("dep sky %s", skybox);
+    { int np = 0; int nl = 0; int nm = 0; loopv(ents) { if(ents[i]->type==ET_PARTICLES) np++; else if(ents[i]->type==ET_LIGHT) nl++; else if(ents[i]->type==ET_MAPMODEL) nm++; } conoutf("dep ents particles=%d lights=%d mapmodels=%d total=%d", np, nl, nm, ents.length()); }
     conoutf("dep end slots=%d models=%d", used.length(), models.length());
 });

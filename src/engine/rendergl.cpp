@@ -1857,6 +1857,7 @@ void drawglare()
     renderwater();
     rendermaterials();
     renderalphageom();
+    vrprofmark(VRP_ALPHA);
     vrprofmark(VRP_WATER);
     renderparticles();
 
@@ -3210,10 +3211,10 @@ void gl_drawhud()
                     if(vrautocapture && capmap[0] && totalmillis >= nextcapture) { vrcapturepending = 1; nextcapture = totalmillis + vrautocapture*1000; }
                     float gwait = 0, gsubmit = 0, gtotal = 0; int gframes = android_vr_get_frametimes(&gwait, &gsubmit, &gtotal);
                     int pf = max(vrprofframes, 1);
-                    char tp[512]; formatstring(tp, " frames=%d total=%.1f wait=%.1f submit=%.1f tick=%.2f cull=%.2f geom=%.2f models=%.2f refl=%.2f water=%.2f parts=%.2f hud=%.2f",
+                    char tp[512]; formatstring(tp, " frames=%d total=%.1f wait=%.1f submit=%.1f tick=%.2f cull=%.2f geom=%.2f models=%.2f refl=%.2f water=%.2f alpha=%.2f parts=%.2f hud=%.2f",
                         gframes, gtotal, gwait, gsubmit,
                         vrprofacc[VRP_TICK]/1000.0f/pf, vrprofacc[VRP_CULL]/1000.0f/pf, vrprofacc[VRP_GEOM]/1000.0f/pf, vrprofacc[VRP_MODELS]/1000.0f/pf,
-                        vrprofacc[VRP_REFLECT]/1000.0f/pf, vrprofacc[VRP_WATER]/1000.0f/pf, vrprofacc[VRP_PARTS]/1000.0f/pf, vrprofacc[VRP_HUD]/1000.0f/pf);
+                        vrprofacc[VRP_REFLECT]/1000.0f/pf, vrprofacc[VRP_WATER]/1000.0f/pf, vrprofacc[VRP_ALPHA]/1000.0f/pf, vrprofacc[VRP_PARTS]/1000.0f/pf, vrprofacc[VRP_HUD]/1000.0f/pf);
                     concatstring(tl, tp);
                     memset(vrprofacc, 0, sizeof(vrprofacc)); vrprofframes = 0;
                     android_vr_telemetry(tl);
@@ -3276,9 +3277,9 @@ void gl_drawhud()
                     if(totalmillis - lastprof >= 500 && vrprofframes > 0)
                     {
                         lastprof = totalmillis; int pf = vrprofframes;
-                        formatstring(line8, "cpu ms/frame: tick %.1f cull %.1f geom %.1f mod %.1f refl %.1f agua %.1f part %.1f hud %.1f",
+                        formatstring(line8, "cpu ms/frame: tick %.1f cull %.1f geom %.1f mod %.1f refl %.1f agua %.1f alfa %.1f part %.1f hud %.1f",
                             vrprofacc[VRP_TICK]/1000.0f/pf, vrprofacc[VRP_CULL]/1000.0f/pf, vrprofacc[VRP_GEOM]/1000.0f/pf, vrprofacc[VRP_MODELS]/1000.0f/pf,
-                            vrprofacc[VRP_REFLECT]/1000.0f/pf, vrprofacc[VRP_WATER]/1000.0f/pf, vrprofacc[VRP_PARTS]/1000.0f/pf, vrprofacc[VRP_HUD]/1000.0f/pf);
+                            vrprofacc[VRP_REFLECT]/1000.0f/pf, vrprofacc[VRP_WATER]/1000.0f/pf, vrprofacc[VRP_ALPHA]/1000.0f/pf, vrprofacc[VRP_PARTS]/1000.0f/pf, vrprofacc[VRP_HUD]/1000.0f/pf);
                     }
                     draw_text(line8, sx, sy + 7*FONTH, 0xB0, 0xB0, 0xB0);
                 }
