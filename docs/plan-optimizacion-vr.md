@@ -148,3 +148,4 @@ De la conversación de diseño (mundo abierto, contrato hexagonal, servidor):
 |---|---|---|---|---|---|---|---|---|---|
 | 2026-11-01 | f316ee9 | duel7 | "medio" (sin cifras) | — | — | — | — | — | antes de vrstats |
 | 2026-11-01 | 3db2294 | duel7, mirando mapa o pared | 41 | — | — | — | — | — | foveado 3; faltan gpu/cpu app |
+| 2026-11-02 | def2aac | duel7, 5 bots, PVS + reflejos compartidos | 49–72 (típico 55–60) | 7–12 | n/d (contador no expuesto); núcleo peor 85–99 % | 15–20/s | 12–25k | 190–480 por ojo | telemetría UDP: **límite = CPU hilo principal**, GPU 55–80 % |
