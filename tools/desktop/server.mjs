@@ -14,7 +14,7 @@ const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const exe = path.join(repo, 'bin64', 'sauer_server.exe');
 if (!fs.existsSync(exe)) { console.error('falta bin64/sauer_server.exe: npm run server:build'); process.exit(1); }
 const args = process.argv.slice(2);
-const opt = (name, def) => (args.includes(name) ? args[args.indexOf(name) + 1] : def);
+const opt = (name, def) => (args.includes(name) ? args[args.indexOf(name) + 1] : (process.env['npm_config_' + name.replace(/^--/, '')] ?? def)); // npm se come los --flags: también npm_config_*
 const name = opt('--name', 'SauVREngine LAN');
 const clients = opt('--clients', '16');
 const port = opt('--port', '28785');

@@ -246,6 +246,8 @@ namespace game
     VAR(simskill, 1, 60, 100);
     // Anfitrión de IA (headless con privilegio de admin): cada segundo "aihost t= bots= ai_ms=".
     VAR(aihost, 0, 0, 1);
+    VAR(aihostbots, 0, 0, 32);   // bots que debe haber; el servidor los borra al cambiar de mapa (changemap → clearai)
+    VAR(aihostskill, 1, 60, 101);
     static int aihostms = 0, aihostframes = 0;
     static void updateaihost()
     {
@@ -258,6 +260,13 @@ namespace game
         logoutf("aihost t=%d map=%s cn=%d bots=%d owned=%d ai_ms=%.2f frames=%d rtt=%u", totalmillis/1000, getclientmap(), player1->clientnum, bots, owned,
             aihostframes ? aihostms/float(aihostframes) : 0.0f, aihostframes, curpeer ? curpeer->roundTripTime : 0);
         aihostms = aihostframes = 0;
+        // reponer bots (hasta 8 por segundo) cuando faltan: tras un cambio de mapa o al arrancar
+        static int lastadd = 0;
+        if(aihostbots > bots && maptime && lastmillis - maptime > 2000 && totalmillis - lastadd >= 1000)
+        {
+            lastadd = totalmillis;
+            loopi(min(aihostbots - bots, 8)) addmsg(N_ADDBOT, "ri", aihostskill);
+        }
     }
     static void updatesimplayer()
     {
