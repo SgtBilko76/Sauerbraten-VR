@@ -1085,8 +1085,11 @@ void ovrApp_HandleSessionStateChanges(ovrApp* app, XrSessionState state) {
 		// Set session state once we have entered VR mode and have a valid session object.
 		if (app->SessionActive)
 		{
-			XrPerfSettingsLevelEXT cpuPerfLevel = XR_PERF_SETTINGS_LEVEL_BOOST_EXT;
-			XrPerfSettingsLevelEXT gpuPerfLevel = XR_PERF_SETTINGS_LEVEL_BOOST_EXT;
+			/* SUSTAINED_HIGH en vez de BOOST: BOOST sube los clocks por encima del rango
+			 * térmico sostenible y el visor acaba frenando. Para volver a BOOST (medir
+			 * el pico, sesiones de menos de un minuto) cambiar estas dos líneas. */
+			XrPerfSettingsLevelEXT cpuPerfLevel = XR_PERF_SETTINGS_LEVEL_SUSTAINED_HIGH_EXT;
+			XrPerfSettingsLevelEXT gpuPerfLevel = XR_PERF_SETTINGS_LEVEL_SUSTAINED_HIGH_EXT;
 
 			PFN_xrPerfSettingsSetPerformanceLevelEXT pfnPerfSettingsSetPerformanceLevelEXT = NULL;
 			OXR(xrGetInstanceProcAddr(

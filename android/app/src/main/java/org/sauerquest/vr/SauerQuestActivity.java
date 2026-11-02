@@ -52,6 +52,19 @@ public class SauerQuestActivity extends Activity implements SurfaceHolder.Callba
 	private static SauerQuestActivity sInstance;
 	public static android.content.Context getContext() { return sInstance; }
 
+	// Estado térmico del SO (API 29+, minSdk es 29): 0 normal, 1 leve, 2 moderado,
+	// 3 severo, 4 crítico, 5 emergencia, 6 apagado. -1 si no hay datos. Lo lee la
+	// telemetría (therm=) desde vr_glue; se llama una vez por segundo.
+	public static int thermalStatus() {
+		try {
+			if (sInstance == null) return -1;
+			android.os.PowerManager pm = (android.os.PowerManager) sInstance.getSystemService(android.content.Context.POWER_SERVICE);
+			return pm != null ? pm.getCurrentThermalStatus() : -1;
+		} catch (Throwable e) {
+			return -1;
+		}
+	}
+
 	@Override protected void onCreate(Bundle icicle)
 	{
 		Log.v(TAG, "SauerQuestActivity::onCreate()");

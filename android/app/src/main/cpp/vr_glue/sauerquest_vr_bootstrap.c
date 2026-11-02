@@ -757,6 +757,23 @@ void jni_shutdown(void)
     (*env)->CallVoidMethod(env, jniCallbackObj, android_shutdown);
 }
 
+/* Estado térmico del SO (PowerManager.getCurrentThermalStatus, Java:
+ * SauerQuestActivity.thermalStatus): 0 normal ... 6 apagado; -1 si no se sabe. */
+static jclass jActivityClass = 0;
+static jmethodID android_thermalstatus = 0;
+
+int android_vr_thermal(void)
+{
+    JNIEnv *env;
+    if (!jVM || !jActivityClass || !android_thermalstatus) return -1;
+    if (((*jVM)->GetEnv(jVM, (void **)&env, JNI_VERSION_1_4)) < 0) {
+        if ((*jVM)->AttachCurrentThread(jVM, &env, NULL) != JNI_OK) return -1;
+    }
+    jint st = (*env)->CallStaticIntMethod(env, jActivityClass, android_thermalstatus);
+    if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); return -1; }
+    return st;
+}
+
 /* No JNI_OnLoad of our own: SDL2's SDL_android.c already defines one (it
  * registers native methods for org/libsdl/app/SDLActivity classes we don't
  * have -- those registrations harmlessly fail-and-log, per its own
@@ -785,6 +802,11 @@ Java_org_sauerquest_vr_SauerQuestJNILib_onCreate(JNIEnv *env, jclass activityCla
 
     jclass realActivityClass = (*env)->GetObjectClass(env, activity);
     Java_org_libsdl_app_SDLActivity_nativeSetupJNI(env, realActivityClass);
+
+    /* Para android_vr_thermal(): clase global y método estático del Activity. */
+    jActivityClass = (jclass)(*env)->NewGlobalRef(env, realActivityClass);
+    android_thermalstatus = (*env)->GetStaticMethodID(env, realActivityClass, "thermalStatus", "()I");
+    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
 
     ovrAppThread *appThread = (ovrAppThread *)malloc(sizeof(ovrAppThread));
     ovrAppThread_Create(appThread, env, activity, activityClass);

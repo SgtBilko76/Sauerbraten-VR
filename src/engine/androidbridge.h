@@ -69,6 +69,7 @@ int android_vr_multiview(void);
  * y lo manda al PC por UDP en trozos (tools/apk/capture.mjs lo guarda en PNG). */
 void android_vr_capture(int scale); /* 3 = un tercio de resolución; 2 para inspeccionar detalle */
 int android_vr_unicast(void); /* 1 si la telemetría va directa al PC */
+int android_vr_thermal(void); /* estado térmico del SO: 0 normal ... 6 apagado; -1 sin datos */
 const char *android_vr_build(void); /* versionName de la APK (p. ej. 0.1.4403-7973186) */
 int android_vr_status(char *buf, int len); /* estado de la telemetría para el HUD */
 int android_vr_srgbcontrol(void); /* 1 si el glue desactivó la codificación sRGB al escribir */
