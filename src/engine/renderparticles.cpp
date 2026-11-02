@@ -958,7 +958,13 @@ void finddepthfxranges()
     if(depthfxscissor<2 && numdepthfxranges>0) depthfxtex.addscissorbox(depthfxmin, depthfxmax);
 }
 
+#ifdef __ANDROID__
+// SauVREngine: las partículas se construyen en CPU por ojo; con disparos de 12
+// bots la fase sube de 1 a 7 ms. Presupuesto más corto en el visor.
+VARFP(maxparticles, 10, 2000, 40000, initparticles());
+#else
 VARFP(maxparticles, 10, 4000, 40000, initparticles());
+#endif
 VARFP(fewparticles, 10, 100, 40000, initparticles());
 
 void initparticles()
@@ -1095,7 +1101,11 @@ static inline particle *newparticle(const vec &o, const vec &d, int fade, int ty
     return parts[type]->addpart(o, d, fade, color, size, gravity);
 }
 
+#ifdef __ANDROID__
+VARP(maxparticledistance, 256, 768, 4096);
+#else
 VARP(maxparticledistance, 256, 1024, 4096);
+#endif
 
 static void splash(int type, int color, int radius, int num, int fade, const vec &p, float size, int gravity)
 {
@@ -1142,7 +1152,11 @@ void particle_splash(int type, int num, int fade, const vec &p, int color, float
     splash(type, color, radius, num, fade, p, size, gravity);
 }
 
+#ifdef __ANDROID__
+VARP(maxtrail, 1, 200, 10000);
+#else
 VARP(maxtrail, 1, 500, 10000);
+#endif
 
 void particle_trail(int type, int fade, const vec &s, const vec &e, int color, float size, int gravity)
 {

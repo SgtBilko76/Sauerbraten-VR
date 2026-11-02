@@ -2644,7 +2644,8 @@ void vrprofmark(int phase)
     vrproft0 = t;
 }
 
-VARP(vrstats, 0, 2, 2);
+// Por defecto solo la línea de fps: el panel completo cuesta ~1 ms por ojo en texto.
+VARP(vrstats, 0, 1, 2);
 #ifdef __ANDROID__
 // Telemetría UDP al PC (serve.mjs la recoge): 0 no, 1 una línea por segundo.
 VARP(vrtelemetry, 0, 1, 1);
