@@ -967,28 +967,43 @@ static void genshadowmapvariant(Shader &s, const char *sname, const char *vs, co
         "varying vec3 shadowmaptc;\n";
     vssm.put(vsdecl, strlen(vsdecl));
 
+    extern int smoothshadowmappeel;
     const char *psdecl =
         "uniform sampler2D shadowmap;\n"
         "uniform vec4 shadowmapambient;\n"
+        "uniform vec2 shadowmaptexel;\n"
         "varying vec3 shadowmaptc;\n";
     pssm.put(psdecl, strlen(psdecl));
+
+    // M2: un tap de sombra por texel vecino. La comparación de capas es la de antes; el receptor
+    // promedia 9 taps (PCF 3x3) y no usa marcas por bloque ni criterio por frame.
+    const char *smfunc = smoothshadowmappeel ?
+        "float smsample(vec2 uv, float zref)\n"
+        "{\n"
+        "    vec4 smvals = texture2D(shadowmap, uv);\n"
+        "    vec2 smdiff = clamp(smvals.xz - zref*smvals.y, 0.0, 1.0);\n"
+        "    return clamp((smdiff.x > 0.0 ? smvals.w : 0.0) - 8.0*smdiff.y, 0.0, 1.0);\n"
+        "}\n" :
+        "float smsample(vec2 uv, float zref)\n"
+        "{\n"
+        "    vec4 smvals = texture2D(shadowmap, uv);\n"
+        "    float smtest = zref*smvals.y;\n"
+        "    return smtest < smvals.x && smtest > smvals.z ? smvals.w : 0.0;\n"
+        "}\n";
+    pssm.put(smfunc, strlen(smfunc));
 
     vssm.put(vsmain, vspragma-vsmain);
     pssm.put(psmain, pspragma-psmain);
 
-    extern int smoothshadowmappeel;
     const char *tcgen =
         "shadowmaptc = vec3(shadowmapproject * vvertex);\n";
     vssm.put(tcgen, strlen(tcgen));
     const char *sm =
-        smoothshadowmappeel ? 
-            "vec4 smvals = texture2D(shadowmap, shadowmaptc.xy);\n"
-            "vec2 smdiff = clamp(smvals.xz - shadowmaptc.zz*smvals.y, 0.0, 1.0);\n"
-            "float shadowed = clamp((smdiff.x > 0.0 ? smvals.w : 0.0) - 8.0*smdiff.y, 0.0, 1.0);\n" :
-
-            "vec4 smvals = texture2D(shadowmap, shadowmaptc.xy);\n"
-            "float smtest = shadowmaptc.z*smvals.y;\n"
-            "float shadowed = smtest < smvals.x && smtest > smvals.z ? smvals.w : 0.0;\n";
+        "float shadowed = 0.0;\n"
+        "for(int smi = -1; smi <= 1; smi++)\n"
+        "for(int smj = -1; smj <= 1; smj++)\n"
+        "    shadowed += smsample(shadowmaptc.xy + vec2(float(smi), float(smj))*shadowmaptexel, shadowmaptc.z);\n"
+        "shadowed /= 9.0;\n";
     pssm.put(sm, strlen(sm));
     // SauVREngine: la sombra se desvanece en el borde del mapa (sin rectángulo visible).
     const char *smedge =

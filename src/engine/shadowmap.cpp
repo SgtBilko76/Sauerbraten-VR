@@ -273,6 +273,9 @@ void pushshadowmap()
     matrix4 m = shadowmatrix;
     m.projective(-1, 1-shadowmapbias/float(shadowmapdist));
     GLOBALPARAM(shadowmapproject, m);
+    // M2: tamaño de un texel en coordenadas de sombra, para el PCF 3x3 del receptor.
+    float shadowtexel = 1.0f/float(1<<shadowmapsize);
+    GLOBALPARAMF(shadowmaptexel, shadowtexel, shadowtexel);
 
     glActiveTexture_(GL_TEXTURE0);
 
