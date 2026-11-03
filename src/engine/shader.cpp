@@ -967,7 +967,9 @@ static void genshadowmapvariant(Shader &s, const char *sname, const char *vs, co
 
     const char *vsdecl =
         "uniform mat4 shadowmapproject;\n"
-        "varying vec3 shadowmaptc;\n";
+        "uniform vec3 smcamera;\n"
+        "varying vec3 shadowmaptc;\n"
+        "varying float smviewdist;\n";
     vssm.put(vsdecl, strlen(vsdecl));
 
     extern int smoothshadowmappeel;
@@ -975,8 +977,20 @@ static void genshadowmapvariant(Shader &s, const char *sname, const char *vs, co
         "uniform sampler2D shadowmap;\n"
         "uniform vec4 shadowmapambient;\n"
         "uniform vec2 shadowmaptexel;\n"
-        "varying vec3 shadowmaptc;\n";
+        "uniform vec3 shadowfade;\n"
+        "varying vec3 shadowmaptc;\n"
+        "varying float smviewdist;\n";
     pssm.put(psdecl, strlen(psdecl));
+
+    // Desvanecimiento por distancia al jugador: 100% hasta shadowfade.x, 15% en shadowfade.y y 0 en shadowfade.z.
+    const char *smfade =
+        "float smfade(float d)\n"
+        "{\n"
+        "    if(d <= shadowfade.x) return 1.0;\n"
+        "    if(d <= shadowfade.y) return mix(1.0, 0.15, (d - shadowfade.x)/(shadowfade.y - shadowfade.x));\n"
+        "    return max(0.0, mix(0.15, 0.0, (d - shadowfade.y)/(shadowfade.z - shadowfade.y)));\n"
+        "}\n";
+    pssm.put(smfade, strlen(smfade));
 
     // M2: un tap de sombra por texel vecino. La comparación de capas es la de antes; el receptor
     // promedia 9 taps (PCF 3x3) y no usa marcas por bloque ni criterio por frame.
@@ -999,14 +1013,16 @@ static void genshadowmapvariant(Shader &s, const char *sname, const char *vs, co
     pssm.put(psmain, pspragma-psmain);
 
     const char *tcgen =
-        "shadowmaptc = vec3(shadowmapproject * vvertex);\n";
+        "shadowmaptc = vec3(shadowmapproject * vvertex);\n"
+        "smviewdist = length(vvertex.xyz - smcamera);\n";
     vssm.put(tcgen, strlen(tcgen));
     const char *sm =
         "float shadowed = 0.0;\n"
         "for(int smi = -1; smi <= 1; smi++)\n"
         "for(int smj = -1; smj <= 1; smj++)\n"
         "    shadowed += smsample(shadowmaptc.xy + vec2(float(smi), float(smj))*shadowmaptexel, shadowmaptc.z);\n"
-        "shadowed /= 9.0;\n";
+        "shadowed /= 9.0;\n"
+        "shadowed *= smfade(smviewdist);\n";
     pssm.put(sm, strlen(sm));
     // SauVREngine: la sombra se desvanece en el borde del mapa (sin rectángulo visible).
     const char *smedge =

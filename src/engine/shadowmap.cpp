@@ -276,6 +276,10 @@ void pushshadowmap()
     // M2: tamaño de un texel en coordenadas de sombra, para el PCF 3x3 del receptor.
     float shadowtexel = 1.0f/float(1<<shadowmapsize);
     GLOBALPARAMF(shadowmaptexel, shadowtexel, shadowtexel);
+    // Desvanecimiento por distancia: 100% a 1 m, 15% a 8 m y 0 en el borde del mapa (1 m = vrworldscale unidades).
+    extern int vrworldscale;
+    GLOBALPARAM(smcamera, camera1->o);
+    GLOBALPARAMF(shadowfade, float(vrworldscale), 8.0f*vrworldscale, float(shadowmapradius));
 
     glActiveTexture_(GL_TEXTURE0);
 
