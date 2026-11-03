@@ -28,7 +28,7 @@ HVARFR(shadowmapambient, 0, 0, 0xFFFFFF,
     if(shadowmapambient <= 255) shadowmapambient |= (shadowmapambient<<8) | (shadowmapambient<<16);
     shadowmapambientcolor = bvec((shadowmapambient>>16)&0xFF, (shadowmapambient>>8)&0xFF, shadowmapambient&0xFF);
 });
-VARP(shadowmapintensity, 0, 40, 100);
+VARP(shadowmapintensity, 0, 60, 100);
 
 VARP(blurshadowmap, 0, 1, 3);
 VARP(blursmsigma, 1, 100, 200);
@@ -114,7 +114,12 @@ matrix4 shadowmatrix;
 
 VARP(shadowmapbias, 0, 5, 1024);
 VARP(shadowmappeelbias, 0, 20, 1024);
+#ifdef __ANDROID__
+// M1: el mapa no guarda la profundidad del mundo (paredes y suelo); evita el acné de cada superficie.
+VAR(smdepthpeel, 0, 0, 1);
+#else
 VAR(smdepthpeel, 0, 1, 1);
+#endif
 VAR(smoothshadowmappeel, 1, 0, 0);
 
 static struct shadowmaptexture : rendertarget
@@ -310,6 +315,10 @@ void pushshadowmap()
         }
 	}
     else { r = shadowmapambientcolor[0]; g = shadowmapambientcolor[1]; b = shadowmapambientcolor[2]; }
+    // M1 (oscuridad constante): la luz dentro de la sombra se reduce por shadowmapintensity (0..100).
+    // Valor fijo, sin fundidos por frame: no cambia de un frame a otro.
+    float darken = shadowmapintensity/100.0f;
+    r *= 1 - darken; g *= 1 - darken; b *= 1 - darken;
     GLOBALPARAMF(shadowmapambient, r/255.0f, g/255.0f, b/255.0f);
 }
 
@@ -331,6 +340,9 @@ void vrsmnote(const char *mdl)
     if(strstr(vrsmcast, mdl)) return;
     if(strlen(vrsmcast) + strlen(mdl) + 2 < sizeof(vrsmcast)) { strcat(vrsmcast, mdl); strcat(vrsmcast, " "); }
 }
+
+float vrshjump = 0;
+int vrshflip = 0, vrsmerr = 0;
 
 void rendershadowmap()
 {
@@ -355,7 +367,12 @@ void rendershadowmap()
     // SauVREngine: sin recortes por tiles ni scissor (dejaban sectores rectangulares).
     int oldrtscissor = rtscissor, oldblurtile = blurtile;
     rtscissor = 0; blurtile = 0;
+    uint64_t t0 = SDL_GetPerformanceCounter();
     shadowmaptex.render(1<<shadowmapsize, 1<<shadowmapsize, blurshadowmap, blursmsigma/100.0f);
+    vrshadowus += (SDL_GetPerformanceCounter() - t0) * 1000000 / SDL_GetPerformanceFrequency();
+    // Diagnóstico M1: salto de la caja entre frames y errores GL del pase.
+    { static vec lastfocus(0, 0, 0); vrshjump = max(vrshjump, shadowfocus.dist(lastfocus)); lastfocus = shadowfocus; }
+    for(GLenum e; (e = glGetError()) != GL_NO_ERROR; ) vrsmerr++;
     rtscissor = oldrtscissor; blurtile = oldblurtile;
 
     glBindFramebuffer_(GL_FRAMEBUFFER, fb);

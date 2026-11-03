@@ -3255,15 +3255,15 @@ void gl_drawhud()
                     if(vrautocapture && capmap[0] && totalmillis >= nextcapture) { vrcapturepending = 1; nextcapture = totalmillis + vrautocapture*1000; }
                     float gwait = 0, gsubmit = 0, gtotal = 0; int gframes = android_vr_get_frametimes(&gwait, &gsubmit, &gtotal);
                     int pf = max(vrprofframes, 1);
-                    extern uint64_t vrshadowus; extern char vrsmcast[768];
+                    extern uint64_t vrshadowus; extern char vrsmcast[768]; extern float vrshjump; extern int vrshflip, vrsmerr;
                     float fp50, fp95, fp99; int flate; vrframestats(fp50, fp95, fp99, flate);
-                    char tp[1024]; formatstring(tp, " frames=%d total=%.1f wait=%.1f submit=%.1f tick=%.2f cull=%.2f geom=%.2f models=%.2f refl=%.2f water=%.2f alpha=%.2f parts=%.2f hud=%.2f psim=%.2f p50=%.1f p95=%.1f p99=%.1f late=%d shadow=%.2f smcast=%s",
+                    char tp[1024]; formatstring(tp, " frames=%d total=%.1f wait=%.1f submit=%.1f tick=%.2f cull=%.2f geom=%.2f models=%.2f refl=%.2f water=%.2f alpha=%.2f parts=%.2f hud=%.2f psim=%.2f p50=%.1f p95=%.1f p99=%.1f late=%d shadow=%.2f smcast=%s smerr=%d shflip=%d shjump=%.2f",
                         gframes, gtotal, gwait, gsubmit,
                         vrprofacc[VRP_TICK]/1000.0f/pf, vrprofacc[VRP_CULL]/1000.0f/pf, vrprofacc[VRP_GEOM]/1000.0f/pf, vrprofacc[VRP_MODELS]/1000.0f/pf,
                         vrprofacc[VRP_REFLECT]/1000.0f/pf, vrprofacc[VRP_WATER]/1000.0f/pf, vrprofacc[VRP_ALPHA]/1000.0f/pf, vrprofacc[VRP_PARTS]/1000.0f/pf, vrprofacc[VRP_HUD]/1000.0f/pf,
-                        vrprofacc[VRP_PSIM]/1000.0f/pf, fp50, fp95, fp99, flate, vrshadowus/1000.0f/pf, vrsmcast);
+                        vrprofacc[VRP_PSIM]/1000.0f/pf, fp50, fp95, fp99, flate, vrshadowus/1000.0f/pf, vrsmcast, vrsmerr, vrshflip, vrshjump);
                     concatstring(tl, tp);
-                    memset(vrprofacc, 0, sizeof(vrprofacc)); vrprofframes = 0; vrshadowus = 0; vrsmcast[0] = 0;
+                    memset(vrprofacc, 0, sizeof(vrprofacc)); vrprofframes = 0; vrshadowus = 0; vrsmcast[0] = 0; vrshflip = 0; vrsmerr = 0; vrshjump = 0;
                     android_vr_telemetry(tl);
                     // Cada 10 s: ajustes de calidad y shaders que han fallado (raíz de "se ve apagado").
                     static int lastcfgline = 0;

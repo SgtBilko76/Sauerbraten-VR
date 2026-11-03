@@ -1391,7 +1391,7 @@ void renderva(renderstate &cur, vtxarray *va, int pass = RENDERPASS_LIGHTMAP, bo
             }
             if(!drawtex && !glaring && !cur.alphaing)
             {
-                va->shadowed = isshadowmapreceiver(va);
+                { extern int vrshflip; bool prevsh = va->shadowed; va->shadowed = isshadowmapreceiver(va); if(prevsh != va->shadowed) vrshflip++; }
                 calcdynlightmask(va);
             }
             if(doquery) startvaquery(va, { if(geombatches.length()) renderbatches(cur, pass); });

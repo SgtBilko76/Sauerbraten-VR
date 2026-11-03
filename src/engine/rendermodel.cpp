@@ -817,11 +817,8 @@ static inline int cullmodel(model *m, const vec &center, float radius, int flags
     }
     if(shadowmapping)
     {
-        if(d)
-        {
-            if(flags&MDL_CULL_OCCLUDED && d->occluded>=OCCLUDE_PARENT) return MDL_CULL_OCCLUDED;
-            if(flags&MDL_CULL_QUERY && d->occluded+1>=OCCLUDE_BB && d->query && d->query->owner==d && checkquery(d->query)) return MDL_CULL_QUERY;
-        }
+        // M1: los casters no se ocluyen según la vista. La oclusión del pase principal cambia al girar el casco
+        // y dejaba fuera de la sombra a jugadores y objetos que sí proyectan sombra.
         if(!addshadowmapcaster(center, radius, radius)) return MDL_CULL_VFC;
     }
     else if(flags&MDL_CULL_OCCLUDED && modeloccluded(center, radius))
