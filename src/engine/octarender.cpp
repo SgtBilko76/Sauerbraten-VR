@@ -1206,6 +1206,7 @@ vtxarray *newva(const ivec &co, int size)
 
     vtxarray *va = new vtxarray;
     va->parent = NULL;
+    va->shadowedlast = false;
     va->o = co;
     va->size = size;
     va->skyarea = vc.skyarea;

@@ -152,7 +152,7 @@ struct vtxarray
     vector<grasstri> grasstris;
     int hasmerges, mergelevel;
     uint dynlightmask;
-    bool shadowed;
+    bool shadowed, shadowedlast; // shadowedlast: estado del frame anterior (telemetría shflip)
 };
 
 struct cube;
