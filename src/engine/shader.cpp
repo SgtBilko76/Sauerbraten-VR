@@ -165,7 +165,10 @@ static void compileglslshader(GLenum type, GLuint &obj, const char *def, const c
 #ifdef __ANDROID__
     extern int vrmultiviewactive;
     vector<char> mvsource;
-    if(vrmultiviewactive) { rewritemultiview(mvsource, source); source = mvsource.getbuf(); }
+    // Shadow-map creation and separable blur draw into ordinary 2D FBOs.
+    // Their programs must stay single-view even while the eye renderer is multiview.
+    const bool multiviewshader = vrmultiviewactive && !strstr(source, "//:singleview");
+    if(multiviewshader) { rewritemultiview(mvsource, source); source = mvsource.getbuf(); }
 #endif
     const char *parts[16];
     int numparts = 0;
@@ -180,7 +183,7 @@ static void compileglslshader(GLenum type, GLuint &obj, const char *def, const c
     char glesheader[32];
     formatstring(glesheader, "#version %d es\n", glslversion);
     parts[numparts++] = glesheader;
-    if(vrmultiviewactive) parts[numparts++] = type == GL_VERTEX_SHADER ?
+    if(multiviewshader) parts[numparts++] = type == GL_VERTEX_SHADER ?
         "#extension GL_OVR_multiview2 : require\nlayout(num_views = 2) in;\n" :
         "#extension GL_OVR_multiview2 : require\n";
 #else
