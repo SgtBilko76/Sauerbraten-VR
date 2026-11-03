@@ -1,6 +1,7 @@
 // main.cpp: initialisation & main loop
 
 #include "engine.h"
+#include "enginename.h"
 
 #ifdef SDL_VIDEO_DRIVER_X11
 #include "SDL_syswm.h"
@@ -70,7 +71,7 @@ void fatal(const char *s, ...)    // failure exit
             }
             SDL_Quit();
 #ifndef __ANDROID__
-            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Cube 2: Sauerbraten fatal error", msg, NULL);
+            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, ENGINE_NAME " fatal error", msg, NULL);
 #endif
             // On Android, logoutf() above already reported this (and, via
             // the native-thread stdout/stderr redirection set up in
@@ -262,6 +263,19 @@ void renderbackground(const char *caption, Texture *mapshot, const char *mapname
         float ly = 0.2f*(h*0.5f - lh);
         settexture((maxtexsize ? min(maxtexsize, hwtexsize) : hwtexsize) >= 1024 && (screenw > 1280 || screenh > 800) ? "data/logo_1024.png" : "data/logo.png", 3);
         bgquad(lx, ly, lw, lh);
+        {
+            // Portada: nombre del motor bajo el logo (ver enginename.h).
+            static const char *enginetitle = ENGINE_TITLE;
+            int tw = text_width(enginetitle);
+            float tsz = 0.07f*min(w, h)/FONTH,
+                  tx = 0.5f*(w - tw*tsz), ty = ly + lh + 0.02f*min(w, h);
+            pushhudmatrix();
+            hudmatrix.translate(tx, ty, 0);
+            hudmatrix.scale(tsz, tsz, 1);
+            flushhudmatrix();
+            draw_text(enginetitle, 0, 0, 0xFF, 0xC8, 0x40);
+            pophudmatrix();
+        }
         if(caption)
         {
             int tw = text_width(caption);
@@ -658,6 +672,14 @@ void setupscreen()
     // plan's Phase 4. Just pick up the per-eye buffer size it already
     // knows.
     android_get_eye_size(&screenw, &screenh);
+    { extern int vrmultiviewactive; vrmultiviewactive = android_vr_multiview(); }
+    if(android_vr_srgbcontrol())
+    {
+        // Con la conversión sRGB desactivada el color coincide con el PC: fuera los
+        // oscurecedores que compensaban la sobreexposición (ver TBXR_InitRenderer).
+        extern int vrgamedim, vrmenudim;
+        vrgamedim = 0; vrmenudim = 0;
+    }
     return;
 #else
     if(glcontext)
@@ -688,6 +710,7 @@ void setupscreen()
     }
 
     int winx = SDL_WINDOWPOS_UNDEFINED, winy = SDL_WINDOWPOS_UNDEFINED, winw = scr_w, winh = scr_h, flags = SDL_WINDOW_RESIZABLE;
+    if(headless) flags |= SDL_WINDOW_HIDDEN;
     if(fullscreen)
     {
         if(fullscreendesktop)
@@ -731,7 +754,7 @@ void setupscreen()
             SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, config&2 ? 1 : 0);
             SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, config&2 ? fsaa : 0);
         }
-        screen = SDL_CreateWindow("Cube 2: Sauerbraten", winx, winy, winw, winh, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_INPUT_FOCUS | SDL_WINDOW_MOUSE_FOCUS | flags);
+        screen = SDL_CreateWindow(ENGINE_TITLE, winx, winy, winw, winh, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_INPUT_FOCUS | SDL_WINDOW_MOUSE_FOCUS | flags);
         if(!screen) continue;
 
     #ifdef __APPLE__
@@ -1136,7 +1159,9 @@ static void gametick()
 
     // miscellaneous general game effects
     recomputecamera();
+    vrprofmark(VRP_TICK);
     updateparticles();
+    vrprofmark(VRP_PSIM);
     updatesounds();
 }
 
@@ -1149,7 +1174,10 @@ static void gamerender()
 #ifdef __ANDROID__
 void android_sauer_tick(void)
 {
+    vrprofstart();
     gametick();
+    vrprofmark(VRP_TICK);
+    vrprofframes++;
 }
 
 void android_sauer_drawframe(void)
@@ -1157,11 +1185,21 @@ void android_sauer_drawframe(void)
     if(minimized) return;
     inbetweenframes = false;
     gamerender();
+    // Captura con el framebuffer del ojo aún enlazado (antes de soltar la swapchain).
+    extern int vrcapturepending;
+    extern int vrcapturescale;
+    if(vrcapturepending) { vrcapturepending = 0; android_vr_capture(vrcapturescale); vrcapturescale = 3; }
 }
 
 void android_sauer_endframe(void)
 {
     if(minimized) return;
+    {
+        // Errores GL del frame → telemetría (glerr=, gllast=). Barato: una llamada por frame.
+        extern int vrglerrors, vrglerr502, vrglerr505, vrglerr506; extern unsigned int vrlastglerror;
+        for(GLenum e; (e = glGetError()) != GL_NO_ERROR; ) { vrglerrors++; vrlastglerror = e; if(e == 0x502) vrglerr502++; else if(e == 0x505) vrglerr505++; else if(e == 0x506) vrglerr506++; }
+    }
+    extern void vrsampleframe(); vrsampleframe();
     swapbuffers();
     renderedframe = inbetweenframes = true;
 }
@@ -1335,6 +1373,11 @@ int getclockmillis()
 
 VAR(numcpus, 1, 1, 256);
 
+// SauVREngine: -H = sin pantalla (ventana oculta con contexto GL, no se dibuja ni
+// suena, 60 ticks/s). Para clientes simulados y para el anfitrión de IA del
+// servidor dedicado (docs/servidor-dedicado.md).
+int headless = 0;
+
 int main(int argc, char **argv)
 {
     #ifdef WIN32
@@ -1380,6 +1423,7 @@ int main(int argc, char **argv)
             case 'w': scr_w = clamp(atoi(&argv[i][2]), SCR_MINW, SCR_MAXW); if(!findarg(argc, argv, "-h")) scr_h = -1; break;
             case 'h': scr_h = clamp(atoi(&argv[i][2]), SCR_MINH, SCR_MAXH); if(!findarg(argc, argv, "-w")) scr_w = -1; break;
             case 'z': depthbits = atoi(&argv[i][2]); break;
+            case 'H': headless = 1; break;
             case 'b': /* compat, ignore */ break;
             case 'a': fsaa = atoi(&argv[i][2]); break;
             case 'v': /* compat, ignore */ break;
@@ -1465,7 +1509,7 @@ int main(int argc, char **argv)
     emptymap(0, true, NULL, false);
 
     logoutf("init: sound");
-    initsound();
+    if(!headless) initsound(); else logoutf("headless: sin sonido ni dibujo");
 
     logoutf("init: cfg");
     initing = INIT_LOAD;
@@ -1486,7 +1530,13 @@ int main(int argc, char **argv)
         execfile(game::defaultconfig());
         writecfg(game::restoreconfig());
     }
+#ifdef __ANDROID__
+    // Presets del visor: define vrpreset_* y aplica el de equilibrio una vez por versión
+    // (vrpresetapplied, que viene de config.cfg). Después manda lo que el usuario elija.
+    execfile("data/vr_presets.cfg", false);
+#endif
     execfile(game::autoexec(), false);
+    if(headless) execute("maxfps 60");
 
     identflags &= ~IDF_PERSIST;
 
@@ -1535,6 +1585,7 @@ int main(int argc, char **argv)
     for(;;)
     {
         gametick();
+        if(headless) { SDL_Delay(1); continue; } // sin dibujar; limitfps (maxfps 60) marca el ritmo
         if(minimized) continue;
         inbetweenframes = false;
         gamerender();

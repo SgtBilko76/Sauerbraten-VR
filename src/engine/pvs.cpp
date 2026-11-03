@@ -837,6 +837,21 @@ static vector<pvsworker *> pvsworkers;
 
 static volatile bool check_genpvs_progress = false;
 
+// ---- PVS en segundo plano (SauVREngine) ------------------------------------
+// genpvs() bloquea el bucle de frames (en VR, imagen congelada un minuto).
+// genpvsbackground() lo ejecuta en un hilo sin pintar progreso; mientras tanto
+// setviewcell() no usa PVS (pvsbusy). checkpvsbackground() recoge el resultado
+// en el hilo principal y lo guarda en <mapa>.pvs.
+static SDL_Thread *pvsbgthread = NULL;
+static SDL_threadID pvsbgthreadid = 0;
+static volatile int pvsbgstate = 0; // 0 nada, 1 calculando, 2 terminado
+static bool pvsquiet = false, pvsbusy = false;
+static int pvsbgcellsize = 32, pvsbgthreads = 1;
+void checkpvsbackground();
+void waitpvsbackground();
+extern bool savepvsfile();
+
+
 static Uint32 genpvs_timer(Uint32 interval, void *param)
 {
     check_genpvs_progress = true;
@@ -985,11 +1000,18 @@ static void lockpvs_(bool lock)
 VARF(lockpvs, 0, 0, 1, lockpvs_(lockpvs!=0));
 
 VARN(pvs, usepvs, 0, 1, 1);
+#ifdef __ANDROID__
+// SauVREngine: el PVS de agua del fichero precalculado marcaba los reflejos
+// como ocultos (fase de reflejo a 0 ms, agua negra). Apagado: ahorra poco.
+VARN(waterpvs, usewaterpvs, 0, 0, 1);
+#else
 VARN(waterpvs, usewaterpvs, 0, 1, 1);
+#endif
 
 void setviewcell(const vec &p)
 {
-    if(!usepvs) curpvs = NULL;
+    checkpvsbackground();
+    if(!usepvs || pvsbusy) curpvs = NULL;
     else if(lockedpvs) 
     {
         curpvs = lockedpvs;
@@ -1010,6 +1032,7 @@ void setviewcell(const vec &p)
 
 void clearpvs()
 {
+    waitpvsbackground();
     DELETEP(viewcells);
     pvs.setsize(0);
     pvsbuf.setsize(0);
@@ -1104,11 +1127,11 @@ void genpvs(int *viewcellsize)
         return;
     }
 
-    renderbackground("generating PVS (esc to abort)");
+    if(!pvsquiet) renderbackground("generating PVS (esc to abort)");
     genpvs_canceled = false;
     Uint32 start = SDL_GetTicks();
 
-    renderprogress(0, "finding view cells");
+    if(!pvsquiet) renderprogress(0, "finding view cells");
 
     clearpvs();
     calcpvsbounds();
@@ -1125,7 +1148,7 @@ void genpvs(int *viewcellsize)
     genpvs_canceled = false;
     check_genpvs_progress = false;
     SDL_TimerID timer = 0;
-    int numthreads = pvsthreads > 0 ? pvsthreads : numcpus;
+    int numthreads = pvsquiet ? pvsbgthreads : (pvsthreads > 0 ? pvsthreads : numcpus);
     if(numthreads<=1) 
     {
         pvsworkers.add(new pvsworker);
@@ -1139,7 +1162,7 @@ void genpvs(int *viewcellsize)
     }
     else
     {
-        renderprogress(0, "creating threads");
+        if(!pvsquiet) renderprogress(0, "creating threads");
         if(!pvsmutex) pvsmutex = SDL_CreateMutex();
         if(!viewcellmutex) viewcellmutex = SDL_CreateMutex();
         loopi(numthreads)
@@ -1147,14 +1170,14 @@ void genpvs(int *viewcellsize)
             pvsworker *w = pvsworkers.add(new pvsworker);
             w->thread = SDL_CreateThread(pvsworker::run, "pvs worker", w);
         }
-        show_genpvs_progress(0, 0);
+        if(!pvsquiet) show_genpvs_progress(0, 0);
         while(!genpvs_canceled)
         {
             SDL_Delay(500);
             SDL_LockMutex(viewcellmutex);
             int unique = pvs.length(), processed = numviewcells, remaining = viewcellrequests.length();
             SDL_UnlockMutex(viewcellmutex);
-            show_genpvs_progress(unique, processed);
+            if(!pvsquiet) show_genpvs_progress(unique, processed);
             if(!remaining) break;
         }        
         SDL_LockMutex(viewcellmutex);
@@ -1171,13 +1194,68 @@ void genpvs(int *viewcellsize)
     if(genpvs_canceled) 
     {
         clearpvs();
-        conoutf("genpvs aborted");
+        if(pvsquiet) logoutf("genpvs aborted"); else conoutf("genpvs aborted");
     }
+    else if(pvsquiet) logoutf("pvs: %d celdas, %.1f kB, %.1f s en segundo plano", pvs.length(), pvsbuf.length()/1024.0f, (end - start) / 1000.0f);
     else conoutf("generated %d unique view cells totaling %.1f kB and averaging %d B (%.1f seconds)", 
             pvs.length(), pvsbuf.length()/1024.0f, pvsbuf.length()/max(pvs.length(), 1), (end - start) / 1000.0f);
 }
 
 COMMAND(genpvs, "i");
+
+static int pvsbgrun(void *)
+{
+    int cs = pvsbgcellsize;
+    genpvs(&cs);
+    pvsbgstate = 2;
+    return 0;
+}
+
+void genpvsbackground(int cellsize)
+{
+    if(pvsbgstate == 1) return;
+    if(pvsbgstate == 2) checkpvsbackground();
+    pvsbgcellsize = cellsize > 0 ? cellsize : 32;
+    pvsbgthreads = max(numcpus - 2, 1); // deja núcleos para el render
+    pvsbusy = true; curpvs = NULL; curwaterpvs = 0;
+    pvsquiet = true;
+    pvsbgstate = 1;
+    pvsbgthread = SDL_CreateThread(pvsbgrun, "pvs background", NULL);
+    if(!pvsbgthread) { pvsbgstate = 0; pvsbusy = false; pvsquiet = false; conoutf(CON_WARN, "no se pudo crear el hilo del pvs"); return; }
+    pvsbgthreadid = SDL_GetThreadID(pvsbgthread);
+    conoutf("generando pvs en segundo plano (celdas de %d)...", pvsbgcellsize);
+}
+
+// Llamar desde el hilo principal (setviewcell lo hace cada frame).
+void checkpvsbackground()
+{
+    if(pvsbgstate != 2) return;
+    SDL_WaitThread(pvsbgthread, NULL);
+    pvsbgthread = NULL; pvsbgthreadid = 0;
+    pvsbgstate = 0; pvsquiet = false; pvsbusy = false;
+    if(getnumviewcells() > 0) { conoutf("pvs listo: %d celdas", getnumviewcells()); savepvsfile(); }
+    else conoutf(CON_WARN, "pvs en segundo plano sin resultado");
+}
+
+// Si se descarga el mapa con el hilo en marcha, cancelarlo y esperar.
+void waitpvsbackground()
+{
+    if(pvsbgstate != 1 || SDL_ThreadID() == pvsbgthreadid) return;
+    genpvs_canceled = true;
+    SDL_WaitThread(pvsbgthread, NULL);
+    pvsbgthread = NULL; pvsbgthreadid = 0;
+    pvsbgstate = 0; pvsquiet = false; pvsbusy = false;
+}
+
+int pvsbgprogress()
+{
+    if(pvsbgstate != 1) return -1;
+    if(!viewcellmutex) return 0;
+    SDL_LockMutex(viewcellmutex);
+    int processed = numviewcells, total = totalviewcells;
+    SDL_UnlockMutex(viewcellmutex);
+    return total > 0 ? min(99, processed*100/total) : 0;
+}
 
 void pvsstats()
 {
@@ -1235,6 +1313,9 @@ bool pvsoccludedsphere(const vec &center, float radius)
     ivec bbmin(vec(center).sub(radius)), bbmax(vec(center).add(radius+1));
     return pvsoccluded(curpvs, bbmin, bbmax);
 }
+
+int getcurwaterpvs() { return curwaterpvs; }
+int getnumwaterplanes() { return numwaterplanes; }
 
 bool waterpvsoccluded(int height)
 {

@@ -10,7 +10,7 @@
 // both 1.2x and 1.3x supersampling -- shadowmap itself is the dominant
 // cost, not resolution). Back to off. If revisited, needs a real,
 // sustained multi-bot match for verification, not just a quick look.
-VARP(shadowmap, 0, 0, 1);
+VAR(shadowmap, 0, 0, 1);
 #else
 VARP(shadowmap, 0, 0, 1);
 #endif
@@ -28,7 +28,7 @@ HVARFR(shadowmapambient, 0, 0, 0xFFFFFF,
     if(shadowmapambient <= 255) shadowmapambient |= (shadowmapambient<<8) | (shadowmapambient<<16);
     shadowmapambientcolor = bvec((shadowmapambient>>16)&0xFF, (shadowmapambient>>8)&0xFF, shadowmapambient&0xFF);
 });
-VARP(shadowmapintensity, 0, 40, 100);
+VARP(shadowmapintensity, 0, 60, 100);
 
 VARP(blurshadowmap, 0, 1, 3);
 VARP(blursmsigma, 1, 100, 200);
@@ -91,13 +91,35 @@ void guessshadowdir()
     shadowdir = dir;
 }
 
+
+
+// M1 (diseño sombras-vr): un único marco de sombra por frame. Lo calcula gl_drawframe antes de
+// visiblecubes() y lo leen la matriz, las cajas de casters y los tests de receptor. No usa yaw ni
+// pitch de la cámara (en VR son los de la cabeza). Se ajusta a una rejilla de texeles.
+void computeshadowframe()
+{
+    float texel = 2*shadowmapradius/float(1<<shadowmapsize);
+    shadowfocus = camera1->o;
+    shadowfocus.x = floor(shadowfocus.x/texel)*texel;
+    shadowfocus.y = floor(shadowfocus.y/texel)*texel;
+    shadowfocus.z += shadowmapheight;
+    shadowoffset = vec(0, 0, 0);
+    shadowmapmaxz = shadowfocus.z - shadowmapdist;
+}
+
 bool shadowmapping = false;
+
 
 matrix4 shadowmatrix;
 
 VARP(shadowmapbias, 0, 5, 1024);
 VARP(shadowmappeelbias, 0, 20, 1024);
+#ifdef __ANDROID__
+// M1: el mapa no guarda la profundidad del mundo (paredes y suelo); evita el acné de cada superficie.
+VAR(smdepthpeel, 0, 0, 1);
+#else
 VAR(smdepthpeel, 0, 1, 1);
+#endif
 VAR(smoothshadowmappeel, 1, 0, 0);
 
 static struct shadowmaptexture : rendertarget
@@ -135,32 +157,12 @@ static struct shadowmaptexture : rendertarget
 
     bool dorender()
     {
+        // M1: la matriz sale de shadowfocus (calculado por computeshadowframe), no del yaw de la cámara.
         vec skewdir(shadowdir);
-        skewdir.rotate_around_z(-camera1->yaw*RAD);
-
-        vec dir;
-        vecfromyawpitch(camera1->yaw, camera1->pitch, 1, 0, dir);
-        dir.z = 0;
-        dir.mul(shadowmapradius);
-
-        vec dirx, diry;
-        vecfromyawpitch(camera1->yaw, 0, 0, 1, dirx);
-        vecfromyawpitch(camera1->yaw, 0, 1, 0, diry);
-        shadowoffset.x = -fmod(dirx.dot(camera1->o) - skewdir.x*camera1->o.z, 2.0f*shadowmapradius/vieww);
-        shadowoffset.y = -fmod(diry.dot(camera1->o) - skewdir.y*camera1->o.z, 2.0f*shadowmapradius/viewh);
-
         shadowmatrix.ortho(-shadowmapradius, shadowmapradius, -shadowmapradius, shadowmapradius, -shadowmapdist, shadowmapdist);
         shadowmatrix.mul(matrix3(vec(1, 0, 0), vec(0, 1, 0), vec(skewdir.x, skewdir.y, 1)));
-        shadowmatrix.translate(skewdir.x*shadowmapheight + shadowoffset.x, skewdir.y*shadowmapheight + shadowoffset.y + dir.magnitude(), -shadowmapheight);
-        shadowmatrix.rotate_around_z((camera1->yaw+180)*-RAD);
-        shadowmatrix.translate(vec(camera1->o).neg());
+        shadowmatrix.translate(vec(shadowfocus).neg());
         GLOBALPARAM(shadowmatrix, shadowmatrix);
-
-        shadowfocus = camera1->o;
-        shadowfocus.add(dir);
-        shadowfocus.add(vec(shadowdir).mul(shadowmapheight));
-        shadowfocus.add(dirx.mul(shadowoffset.x));
-        shadowfocus.add(diry.mul(shadowoffset.y));
 
         gle::colorf(0, 0, 0);
 
@@ -206,26 +208,23 @@ void cleanshadowmap()
 
 void calcshadowmapbb(const vec &o, float xyrad, float zrad, float &x1, float &y1, float &x2, float &y2)
 {
+    // M1: mismo marco que la matriz (centrado en shadowfocus, sin yaw ni pitch).
     vec skewdir(shadowdir);
-    skewdir.rotate_around_z(-camera1->yaw*RAD);
-
     vec ro(o);
-    ro.sub(camera1->o);
-    ro.rotate_around_z(-(camera1->yaw+180)*RAD);
-    ro.x += ro.z * skewdir.x + shadowoffset.x;
-    ro.y += ro.z * skewdir.y + shadowmapradius * cosf(camera1->pitch*RAD) + shadowoffset.y;
-
+    ro.sub(shadowfocus);
+    ro.x += ro.z * skewdir.x;
+    ro.y += ro.z * skewdir.y;
     vec high(ro), low(ro);
     high.x += zrad * skewdir.x;
     high.y += zrad * skewdir.y;
     low.x -= zrad * skewdir.x;
     low.y -= zrad * skewdir.y;
-
     x1 = (min(high.x, low.x) - xyrad) / shadowmapradius;
     y1 = (min(high.y, low.y) - xyrad) / shadowmapradius;
     x2 = (max(high.x, low.x) + xyrad) / shadowmapradius;
     y2 = (max(high.y, low.y) + xyrad) / shadowmapradius;
 }
+
 
 bool addshadowmapcaster(const vec &o, float xyrad, float zrad)
 {
@@ -244,32 +243,10 @@ bool addshadowmapcaster(const vec &o, float xyrad, float zrad)
 
 bool isshadowmapreceiver(vtxarray *va)
 {
-    if(!shadowmap || !shadowmapcasters) return false;
-
-    if(va->shadowmapmax.z <= shadowfocus.z - shadowmapdist || va->shadowmapmin.z >= shadowmapmaxz) return false;
-
-    float xyrad = SQRT2*0.5f*max(va->shadowmapmax.x-va->shadowmapmin.x, va->shadowmapmax.y-va->shadowmapmin.y),
-          zrad = 0.5f*(va->shadowmapmax.z-va->shadowmapmin.z),
-          x1, y1, x2, y2;
-    if(xyrad<0 || zrad<0) return false;
-
-    vec center = vec(va->shadowmapmin).add(vec(va->shadowmapmax)).mul(0.5f);
-    calcshadowmapbb(center, xyrad, zrad, x1, y1, x2, y2);
-
-    return shadowmaptex.checkblurtiles(x1, y1, x2, y2, 2);
-
-#if 0
-    // cheaper inexact test
-    float dz = va->o.z + va->size/2 - shadowfocus.z;
-    float cx = shadowfocus.x + dz*shadowdir.x, cy = shadowfocus.y + dz*shadowdir.y;
-    float skew = va->size/2*SHADOWSKEW;
-    if(!shadowmap || !shadowmaptex ||
-       va->o.z + va->size <= shadowfocus.z - shadowmapdist || va->o.z >= shadowmapmaxz ||
-       va->o.x + va->size <= cx - shadowmapradius-skew || va->o.x >= cx + shadowmapradius+skew || 
-       va->o.y + va->size <= cy - shadowmapradius-skew || va->o.y >= cy + shadowmapradius+skew) 
-        return false;
-    return true;
-#endif
+    // M1d: todas las superficies usan la variante con sombra cuando hay mapa. Antes, el criterio dependía
+    // de la caja y del número de casters de cada frame: marcas que cambiaban y líneas rectas en los bordes.
+    // Fuera de la caja el shader devuelve sombra 0.
+    return shadowmap != 0;
 }
 
 bool isshadowmapcaster(const vec &o, float rad)
@@ -290,12 +267,19 @@ void pushshadowmap()
 {
     if(!shadowmap || !shadowmaptex.rendertex) return;
 
-    glActiveTexture_(GL_TEXTURE7);
+    glActiveTexture_(GL_TEXTURE0+15);
     glBindTexture(GL_TEXTURE_2D, shadowmaptex.rendertex);
 
     matrix4 m = shadowmatrix;
     m.projective(-1, 1-shadowmapbias/float(shadowmapdist));
     GLOBALPARAM(shadowmapproject, m);
+    // M2: tamaño de un texel en coordenadas de sombra, para el PCF 3x3 del receptor.
+    float shadowtexel = 1.0f/float(1<<shadowmapsize);
+    GLOBALPARAMF(shadowmaptexel, shadowtexel, shadowtexel);
+    // Desvanecimiento por distancia: 100% a 1 m, 15% a 8 m y 0 en el borde del mapa (1 m = vrworldscale unidades).
+    extern int vrworldscale;
+    GLOBALPARAM(smcamera, camera1->o);
+    GLOBALPARAMF(shadowfade, float(vrworldscale), 8.0f*vrworldscale, float(shadowmapradius));
 
     glActiveTexture_(GL_TEXTURE0);
 
@@ -316,19 +300,81 @@ void pushshadowmap()
         }
 	}
     else { r = shadowmapambientcolor[0]; g = shadowmapambientcolor[1]; b = shadowmapambientcolor[2]; }
+    // M1 (oscuridad constante): la luz dentro de la sombra se reduce por shadowmapintensity (0..100).
+    // Valor fijo, sin fundidos por frame: no cambia de un frame a otro.
+    float darken = shadowmapintensity/100.0f;
+    r *= 1 - darken; g *= 1 - darken; b *= 1 - darken;
     GLOBALPARAMF(shadowmapambient, r/255.0f, g/255.0f, b/255.0f);
 }
 
 void popshadowmap()
 {
     if(!shadowmap || !shadowmaptex.rendertex) return;
+    // M1: soltar la unidad 15; si el mapa queda enlazado, otros pases lo leen como textura.
+    glActiveTexture_(GL_TEXTURE0+15);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glActiveTexture_(GL_TEXTURE0);
 }
+
+// SauVREngine: tiempo de CPU del shadowmap en el frame (µs), para la telemetría shadow=.
+uint64_t vrshadowus = 0;
+// Diagnóstico: nombres de los modelos que llegan al pase de sombras en el último segundo (telemetría smcast=).
+char vrsmcast[768] = "";
+void vrsmnote(const char *mdl)
+{
+    if(strstr(vrsmcast, mdl)) return;
+    if(strlen(vrsmcast) + strlen(mdl) + 2 < sizeof(vrsmcast)) { strcat(vrsmcast, mdl); strcat(vrsmcast, " "); }
+}
+
+float vrshjump = 0;
+int vrshflip = 0, vrsmerr = 0;
+// Telemetría shrec: VAs de superficie que llevan la variante con sombra en el frame (suma; se promedia por frame).
+int vrshrec = 0;
 
 void rendershadowmap()
 {
     if(!shadowmap) return;
 
+    // M1: el pase guarda y restaura TODO su estado: framebuffer, viewport, scissor, máscaras,
+    // profundidad, culling, blend, unidad activa y programa. Antes dejaba el por defecto.
+    GLint fb = 0, vp[4], box[4], prog = 0, activetex = 0, cullmode = 0, depthfunc = 0;
+    GLboolean scissor = glIsEnabled(GL_SCISSOR_TEST), cull = glIsEnabled(GL_CULL_FACE), blend = glIsEnabled(GL_BLEND), depth = glIsEnabled(GL_DEPTH_TEST);
+    GLboolean colmask[4], depthmask = GL_TRUE;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &fb);
+    glGetIntegerv(GL_VIEWPORT, vp);
+    glGetIntegerv(GL_SCISSOR_BOX, box);
+    glGetIntegerv(GL_CURRENT_PROGRAM, &prog);
+    glGetIntegerv(GL_ACTIVE_TEXTURE, &activetex);
+    glGetIntegerv(GL_CULL_FACE_MODE, &cullmode);
+    glGetIntegerv(GL_DEPTH_FUNC, &depthfunc);
+    glGetBooleanv(GL_COLOR_WRITEMASK, colmask);
+    glGetBooleanv(GL_DEPTH_WRITEMASK, &depthmask);
+    Shader *prevshader = Shader::lastshader;
+
+    // SauVREngine: sin recortes por tiles ni scissor (dejaban sectores rectangulares).
+    int oldrtscissor = rtscissor, oldblurtile = blurtile;
+    rtscissor = 0; blurtile = 0;
+    uint64_t t0 = SDL_GetPerformanceCounter();
     shadowmaptex.render(1<<shadowmapsize, 1<<shadowmapsize, blurshadowmap, blursmsigma/100.0f);
+    vrshadowus += (SDL_GetPerformanceCounter() - t0) * 1000000 / SDL_GetPerformanceFrequency();
+    // Diagnóstico M1: salto de la caja entre frames y errores GL del pase.
+    { static vec lastfocus(0, 0, 0); vrshjump = max(vrshjump, shadowfocus.dist(lastfocus)); lastfocus = shadowfocus; }
+    for(GLenum e; (e = glGetError()) != GL_NO_ERROR; ) vrsmerr++;
+    rtscissor = oldrtscissor; blurtile = oldblurtile;
+
+    glBindFramebuffer_(GL_FRAMEBUFFER, fb);
+    glViewport(vp[0], vp[1], vp[2], vp[3]);
+    if(scissor) { glEnable(GL_SCISSOR_TEST); glScissor(box[0], box[1], box[2], box[3]); } else glDisable(GL_SCISSOR_TEST);
+    if(cull) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
+    glCullFace(cullmode);
+    if(blend) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+    if(depth) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+    glDepthFunc(depthfunc);
+    glColorMask(colmask[0], colmask[1], colmask[2], colmask[3]);
+    glDepthMask(depthmask);
+    glUseProgram_(prog);
+    glActiveTexture_(activetex);
+    Shader::lastshader = prevshader;
 }
 
 VAR(debugsm, 0, 0, 1);

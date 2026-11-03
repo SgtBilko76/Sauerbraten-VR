@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "status": "assets-ready-runtime-integration-pending",
+  "integration_pr": "https://github.com/killyvera/SauVREngine/pull/1",
+  "textures": [
+    {
+      "hd": "hd/ik_brick_6464c.jpg",
+      "replaces": "android/app/src/main/assets/packages/ik2k/ik_brick_6464c.jpg",
+      "logical_size": [
+        128,
+        128
+      ],
+      "size": [
+        512,
+        512
+      ]
+    },
+    {
+      "hd": "hd/floor_pavement_stone4_3.jpg",
+      "replaces": "android/app/src/main/assets/packages/dg/floor_pavement_stone4_3.jpg",
+      "logical_size": [
+        256,
+        256
+      ],
+      "size": [
+        512,
+        512
+      ]
+    }
+  ]
+}

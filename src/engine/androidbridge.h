@@ -41,6 +41,43 @@ void android_sauer_endframe(void);
 // it's called.
 void android_get_eye_size(int *w, int *h);
 
+/* Métricas del runtime (XR_META_performance_metrics) y foveado fijo, para el
+ * panel vrstats de rendergl.cpp. Implementadas en vr_glue/sauerquest_vr_bootstrap.c
+ * sobre vr_glue/VrPerf.c. Valores -1 = no disponible. */
+typedef struct {
+    float appCpuMs, appGpuMs, compCpuMs, compGpuMs, latencyMs;
+    float cpuUtilAvg, cpuUtilWorst, gpuUtil;
+    int droppedFrames, foveationLevel, foveationDynamic, foveationApplied;
+    float refreshHz;
+} android_vr_metrics;
+int android_vr_get_metrics(android_vr_metrics *m);
+void android_vr_set_foveation(int level, int dynamic);
+/* Telemetría: una línea de texto por UDP broadcast al PC (vr_glue/VrTelemetry.c). */
+void android_vr_telemetry(const char *line);
+/* Ojo que se está dibujando (0 izquierdo, 1 derecho); lo pone el bucle VR antes de
+ * cada android_sauer_drawframe(). Lo usan los pases que se comparten entre ojos. */
+void android_sauer_set_eye_index(int eye);
+/* Multiview: los dos ojos de golpe (offsets cabeza→ojo en ejes de Sauerbraten,
+ * orientación común y tan de cada frustum). El motor dibuja una vez. */
+void android_sauer_set_eyes(float dx0, float dy0, float dz0, float dx1, float dy1, float dz1,
+                            float yaw, float pitch, float roll,
+                            float tl0, float tr0, float tu0, float td0,
+                            float tl1, float tr1, float tu1, float td1);
+/* 1 si el glue creó la swapchain en array y espera shaders multiview. */
+int android_vr_multiview(void);
+/* Lee la capa 0 del framebuffer del ojo (lo que ve el ojo izquierdo), lo reduce
+ * y lo manda al PC por UDP en trozos (tools/apk/capture.mjs lo guarda en PNG). */
+void android_vr_capture(int scale); /* 3 = un tercio de resolución; 2 para inspeccionar detalle */
+int android_vr_unicast(void); /* 1 si la telemetría va directa al PC */
+int android_vr_thermal(void); /* estado térmico del SO: 0 normal ... 6 apagado; -1 sin datos */
+const char *android_vr_build(void); /* versionName de la APK (p. ej. 0.1.4403-7973186) */
+int android_vr_status(char *buf, int len); /* estado de la telemetría para el HUD */
+int android_vr_srgbcontrol(void); /* 1 si el glue desactivó la codificación sRGB al escribir */
+/* Tiempos medios por frame (ms) del bucle VR desde la última llamada: espera en
+ * xrWaitFrame (TBXR_FrameSetup), xrEndFrame (TBXR_submitFrame) y frame completo.
+ * Devuelve el número de frames acumulados y pone los acumuladores a cero. */
+int android_vr_get_frametimes(float *waitms, float *submitms, float *totalms);
+
 // Implemented in rendergl.cpp; called once per eye, immediately before
 // android_sauer_drawframe(), to report that eye's real OpenXR pose/FOV
 // for this frame. setcammatrix()/gl_drawframe() read these (instead of

@@ -369,6 +369,7 @@ namespace server
         extern void removeai(clientinfo *ci);
         extern void clearai();
         extern void checkai();
+        extern bool dorefresh;
         extern void reqadd(clientinfo *ci, int skill);
         extern void reqdel(clientinfo *ci);
         extern void setbotlimit(clientinfo *ci, int limit);
@@ -1468,6 +1469,7 @@ namespace server
             }
             if(trial) return true;
             ci->privilege = wantpriv;
+            aiman::dorefresh = true; // SauVREngine: un admin puede ser anfitrión de IA (aiman.h)
             name = privname(ci->privilege);
         }
         else

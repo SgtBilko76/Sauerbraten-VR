@@ -812,16 +812,15 @@ static inline int cullmodel(model *m, const vec &center, float radius, int flags
             }
             if(center.dist(camera1->o)-radius>reflectdist) return MDL_CULL_VFC;
         }
-        if(isfoggedsphere(radius, center)) return MDL_CULL_VFC;
+        // M1c: el pase de sombras no usa el frustum ni la niebla de la vista (vfcP): los casters fuera de
+        // la mirada tienen que proyectar sombra igual. Antes solo proyectaban cuando entraban en la vista.
+        if(!shadowmapping && isfoggedsphere(radius, center)) return MDL_CULL_VFC;
         if(shadowmapping && !isshadowmapcaster(center, radius)) return MDL_CULL_VFC;
     }
     if(shadowmapping)
     {
-        if(d)
-        {
-            if(flags&MDL_CULL_OCCLUDED && d->occluded>=OCCLUDE_PARENT) return MDL_CULL_OCCLUDED;
-            if(flags&MDL_CULL_QUERY && d->occluded+1>=OCCLUDE_BB && d->query && d->query->owner==d && checkquery(d->query)) return MDL_CULL_QUERY;
-        }
+        // M1: los casters no se ocluyen según la vista. La oclusión del pase principal cambia al girar el casco
+        // y dejaba fuera de la sombra a jugadores y objetos que sí proyectan sombra.
         if(!addshadowmapcaster(center, radius, radius)) return MDL_CULL_VFC;
     }
     else if(flags&MDL_CULL_OCCLUDED && modeloccluded(center, radius))
@@ -837,14 +836,32 @@ static inline int cullmodel(model *m, const vec &center, float radius, int flags
     return 0;
 }
 
+#ifdef __ANDROID__
+VARP(vrplayershadow, 0, 0, 1);
+#endif
+
 void rendermodel(entitylight *light, const char *mdl, int anim, const vec &o, float yaw, float pitch, int flags, dynent *d, modelattach *a, int basetime, int basetime2, float trans)
 {
+#ifdef __ANDROID__
+    // VR: ningún elemento del jugador proyecta sombra: ni el arma/brazo en la mano
+    // (MDL_HUD) ni su propio modelo o ragdoll (d == player). vrplayershadow 1 lo
+    // reactiva (pensado para un cuerpo completo con IK más adelante).
+    if(!vrplayershadow && ((flags&MDL_HUD) || (d && d == player))) flags &= ~(MDL_SHADOW|MDL_DYNSHADOW);
+    // Con shadowmap real: el arma/brazo y el propio jugador ni siquiera entran en el mapa de sombras.
+    if(shadowmapping && !vrplayershadow && ((flags&MDL_HUD) || (d && d == player))) return;
+    // VR: solo los jugadores y los bots proyectan sombra (ni granadas, ni objetos, ni movibles, ni anillos).
+    if(shadowmapping && !(d && d->type==ENT_PLAYER) && !(flags&MDL_ITEM)) return;
+#endif
     if(shadowmapping && !(flags&(MDL_SHADOW|MDL_DYNSHADOW))) return;
     model *m = loadmodel(mdl); 
     if(!m) return;
     vec center(0, 0, 0), bbradius(0, 0, 0);
     float radius = 0;
+#ifdef __ANDROID__
+    bool shadow = !shadowmap && !glaring && (flags&(MDL_SHADOW|MDL_DYNSHADOW)) && showblobs && ((d && d->type==ENT_PLAYER) || (flags&MDL_ITEM)); // VR: jugadores, bots y objetos
+#else
     bool shadow = !shadowmap && !glaring && (flags&(MDL_SHADOW|MDL_DYNSHADOW)) && showblobs;
+#endif
 
     if(flags&(MDL_CULL_VFC|MDL_CULL_DIST|MDL_CULL_OCCLUDED|MDL_CULL_QUERY|MDL_SHADOW|MDL_DYNSHADOW))
     {
@@ -867,6 +884,9 @@ void rendermodel(entitylight *light, const char *mdl, int anim, const vec &o, fl
         }
 
         int culled = cullmodel(m, center, radius, flags, d, shadow);
+#ifdef __ANDROID__
+        if(shadowmapping && !culled) { extern void vrsmnote(const char *mdl); vrsmnote(mdl); }
+#endif
         if(culled)
         {
             if(culled&(MDL_CULL_OCCLUDED|MDL_CULL_QUERY) && flags&MDL_CULL_QUERY && !reflecting && !refracting)
@@ -1148,7 +1168,13 @@ void renderclient(dynent *d, const char *mdlname, modelattach *attachments, int 
     if(d->type==ENT_PLAYER) flags |= MDL_FULLBRIGHT;
     else flags |= MDL_CULL_DIST;
     if(d->state==CS_LAGGED) fade = min(fade, 0.3f);
+#ifdef __ANDROID__
+    // VR: el propio jugador no lleva sombra (su blob aparecía flotando en los
+    // reflejos y bajo la mano); los bots sí.
+    else if(d != player || vrplayershadow) flags |= MDL_DYNSHADOW;
+#else
     else flags |= MDL_DYNSHADOW;
+#endif
     if(drawtex == DRAWTEX_MODELPREVIEW) flags &= ~(MDL_LIGHT | MDL_FULLBRIGHT | MDL_CULL_VFC | MDL_CULL_OCCLUDED | MDL_CULL_QUERY | MDL_CULL_DIST | MDL_DYNSHADOW);
     rendermodel(NULL, mdlname, anim, o, yaw, pitch, flags, d, attachments, basetime, 0, fade);
 }

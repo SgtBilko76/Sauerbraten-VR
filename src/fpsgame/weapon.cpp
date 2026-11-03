@@ -876,7 +876,11 @@ namespace game
             }
             pitch = -bnc.roll;
             if(bnc.bouncetype==BNC_GRENADE)
-                rendermodel(&bnc.light, "projectiles/grenade", ANIM_MAPMODEL|ANIM_LOOP, pos, yaw, pitch, MDL_CULL_VFC|MDL_CULL_OCCLUDED|MDL_LIGHT|MDL_LIGHT_FAST|MDL_DYNSHADOW);
+            {
+                rendermodel(&bnc.light, "projectiles/grenade", ANIM_MAPMODEL|ANIM_LOOP, pos, yaw, pitch, MDL_CULL_VFC|MDL_CULL_OCCLUDED|MDL_LIGHT|MDL_LIGHT_FAST); /* VR: las granadas no proyectan sombra (salían enormes junto al visor) */
+                // VR: la granada no proyecta sombra dinámica; bajo ella va un círculo difuso (blob).
+                renderblob(1 /* BLOB_DYNAMIC */, pos, 3.0f, 1.0f);
+            }
             else
             {
                 const char *mdl = NULL;
@@ -885,7 +889,7 @@ namespace game
                 if(bnc.lifetime < 250) fade = bnc.lifetime/250.0f;
                 switch(bnc.bouncetype)
                 {
-                    case BNC_GIBS: mdl = gibnames[bnc.variant]; cull |= MDL_LIGHT|MDL_LIGHT_FAST|MDL_DYNSHADOW; break;
+                    case BNC_GIBS: mdl = gibnames[bnc.variant]; cull |= MDL_LIGHT|MDL_LIGHT_FAST; break;
                     case BNC_DEBRIS: mdl = debrisnames[bnc.variant]; break;
                     case BNC_BARRELDEBRIS: mdl = barreldebrisnames[bnc.variant]; break;
                     default: continue;

@@ -13,6 +13,7 @@
 #include <android/input.h>
 
 #include "VrCommon.h"
+#include "VrPerf.h"
 
 /* Originally pulled in transitively via DarkPlaces' mathlib.h. */
 #ifndef DEG2RAD
@@ -83,6 +84,9 @@ int REFRESH	            = 0;
 // GPU once systemProperties.systemName is known (see the "meta" system
 // properties block below).
 float SS_MULTIPLIER    = 1.0f;
+static bool useMultiview = false; /* SauVREngine: ver TBXR_DecideMultiview() */
+typedef void (GL_APIENTRYP PFNGLFBTEXMULTIVIEWOVR_)(GLenum target, GLenum attachment, GLuint texture, GLint level, GLint baseViewIndex, GLsizei numViews);
+static PFNGLFBTEXMULTIVIEWOVR_ glFramebufferTextureMultiviewOVR_ = NULL;
 
 GLboolean stageSupported = GL_FALSE;
 
@@ -148,6 +152,7 @@ typedef struct
 {
 	bool multi_view;						// GL_OVR_multiview, GL_OVR_multiview2
 	bool EXT_texture_border_clamp;			// GL_EXT_texture_border_clamp, GL_OES_texture_border_clamp
+	bool srgb_write_control;				// GL_EXT_sRGB_write_control (SauVREngine)
 } OpenGLExtensions_t;
 
 OpenGLExtensions_t glExtensions;
@@ -313,6 +318,7 @@ static void EglInitExtensions()
 	const char * allExtensions = (const char *)glGetString( GL_EXTENSIONS );
 	if ( allExtensions != NULL )
 	{
+		glExtensions.srgb_write_control = strstr( allExtensions, "GL_EXT_sRGB_write_control" ) != NULL;
 		glExtensions.multi_view = strstr( allExtensions, "GL_OVR_multiview2" ) &&
 								  strstr( allExtensions, "GL_OVR_multiview_multisampled_render_to_texture" );
 
@@ -568,6 +574,7 @@ static bool ovrFramebuffer_Create(
     frameBuffer->Width = width;
     frameBuffer->Height = height;
     frameBuffer->Multisamples = multisamples;
+    frameBuffer->Multiview = useMultiview;
 
     XrSwapchainCreateInfo swapChainCreateInfo;
     memset(&swapChainCreateInfo, 0, sizeof(swapChainCreateInfo));
@@ -578,8 +585,9 @@ static bool ovrFramebuffer_Create(
     swapChainCreateInfo.width = width;
     swapChainCreateInfo.height = height;
     swapChainCreateInfo.faceCount = 1;
-    swapChainCreateInfo.arraySize = 1;
+    swapChainCreateInfo.arraySize = frameBuffer->Multiview ? 2 : 1;
     swapChainCreateInfo.mipCount = 1;
+    swapChainCreateInfo.next = (void *)VrPerf_FoveationCreateInfo(); /* NULL si no hay foveado */
 
     frameBuffer->ColorSwapChain.Width = swapChainCreateInfo.width;
     frameBuffer->ColorSwapChain.Height = swapChainCreateInfo.height;
@@ -614,7 +622,7 @@ static bool ovrFramebuffer_Create(
         const GLuint colorTexture = frameBuffer->ColorSwapChainImage[i].image;
 
 		GLfloat borderColor[] = {0.0f, 0.0f, 0.0f, 0.0f};
-        GLenum colorTextureTarget = GL_TEXTURE_2D;
+        GLenum colorTextureTarget = frameBuffer->Multiview ? GL_TEXTURE_2D_ARRAY : GL_TEXTURE_2D;
 		GL(glTexParameterfv(colorTextureTarget, GL_TEXTURE_BORDER_COLOR, borderColor));
         GL(glBindTexture(colorTextureTarget, colorTexture));
         GL(glTexParameteri(colorTextureTarget, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
@@ -623,7 +631,23 @@ static bool ovrFramebuffer_Create(
         GL(glTexParameteri(colorTextureTarget, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
         GL(glBindTexture(colorTextureTarget, 0));
 
-        if (glRenderbufferStorageMultisampleEXT != NULL &&
+        if (frameBuffer->Multiview) {
+            // Profundidad como textura array de 2 capas y adjuntos multiview (OVR_multiview).
+            GL(glGenTextures(1, &frameBuffer->DepthBuffers[i]));
+            GL(glBindTexture(GL_TEXTURE_2D_ARRAY, frameBuffer->DepthBuffers[i]));
+            GL(glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1, GL_DEPTH_COMPONENT24, width, height, 2));
+            GL(glBindTexture(GL_TEXTURE_2D_ARRAY, 0));
+            GL(glGenFramebuffers(1, &frameBuffer->FrameBuffers[i]));
+            GL(glBindFramebuffer(GL_DRAW_FRAMEBUFFER, frameBuffer->FrameBuffers[i]));
+            GL(glFramebufferTextureMultiviewOVR_(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, colorTexture, 0, 0, 2));
+            GL(glFramebufferTextureMultiviewOVR_(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, frameBuffer->DepthBuffers[i], 0, 0, 2));
+            GL(GLenum mvStatus = glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER));
+            GL(glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0));
+            if (mvStatus != GL_FRAMEBUFFER_COMPLETE) {
+                ALOGE("Incomplete multiview frame buffer object: %s", GlFrameBufferStatusString(mvStatus));
+                return false;
+            }
+        } else if (glRenderbufferStorageMultisampleEXT != NULL &&
             glFramebufferTexture2DMultisampleEXT != NULL) {
             // Create multisampled depth buffer.
             GL(glGenRenderbuffers(1, &frameBuffer->DepthBuffers[i]));
@@ -665,8 +689,10 @@ static bool ovrFramebuffer_Create(
 }
 
 void ovrFramebuffer_Destroy(ovrFramebuffer* frameBuffer) {
+    if (frameBuffer->ColorSwapChain.Handle == XR_NULL_HANDLE) return; /* ojo 1 sin usar con multiview */
     GL(glDeleteFramebuffers(frameBuffer->TextureSwapChainLength, frameBuffer->FrameBuffers));
-    GL(glDeleteRenderbuffers(frameBuffer->TextureSwapChainLength, frameBuffer->DepthBuffers));
+    if (frameBuffer->Multiview) { GL(glDeleteTextures(frameBuffer->TextureSwapChainLength, frameBuffer->DepthBuffers)); }
+    else { GL(glDeleteRenderbuffers(frameBuffer->TextureSwapChainLength, frameBuffer->DepthBuffers)); }
     OXR(xrDestroySwapchain(frameBuffer->ColorSwapChain.Handle));
     free(frameBuffer->ColorSwapChainImage);
 
@@ -740,8 +766,8 @@ void ovrRenderer_Create(
 		ovrRenderer* renderer,
 		int suggestedEyeTextureWidth,
 		int suggestedEyeTextureHeight) {
-	// Create the frame buffers.
-	for (int eye = 0; eye < ovrMaxNumEyes; eye++) {
+	// Create the frame buffers (con multiview, uno solo con dos capas).
+	for (int eye = 0; eye < (useMultiview ? 1 : ovrMaxNumEyes); eye++) {
 		ovrFramebuffer_Create(
 				session,
 				&renderer->FrameBuffer[eye],
@@ -1059,8 +1085,11 @@ void ovrApp_HandleSessionStateChanges(ovrApp* app, XrSessionState state) {
 		// Set session state once we have entered VR mode and have a valid session object.
 		if (app->SessionActive)
 		{
-			XrPerfSettingsLevelEXT cpuPerfLevel = XR_PERF_SETTINGS_LEVEL_BOOST_EXT;
-			XrPerfSettingsLevelEXT gpuPerfLevel = XR_PERF_SETTINGS_LEVEL_BOOST_EXT;
+			/* SUSTAINED_HIGH en vez de BOOST: BOOST sube los clocks por encima del rango
+			 * térmico sostenible y el visor acaba frenando. Para volver a BOOST (medir
+			 * el pico, sesiones de menos de un minuto) cambiar estas dos líneas. */
+			XrPerfSettingsLevelEXT cpuPerfLevel = XR_PERF_SETTINGS_LEVEL_SUSTAINED_HIGH_EXT;
+			XrPerfSettingsLevelEXT gpuPerfLevel = XR_PERF_SETTINGS_LEVEL_SUSTAINED_HIGH_EXT;
 
 			PFN_xrPerfSettingsSetPerformanceLevelEXT pfnPerfSettingsSetPerformanceLevelEXT = NULL;
 			OXR(xrGetInstanceProcAddr(
@@ -1499,6 +1528,47 @@ void TBXR_InitialiseResolution()
 	gAppState.Height = gAppState.ViewConfigurationView[0].recommendedImageRectHeight * SS_MULTIPLIER;
 }
 
+/* ---- SauVREngine: multiview ----------------------------------------------
+ * El motor escribe <files>/vrmultiview.txt ("0"/"1") con la variable
+ * vrmultiview; aquí se lee antes de crear el renderer. <files>/vrboot.txt
+ * guarda "booting" al arrancar y "ok" cuando el bucle lleva 100 frames: si
+ * al arrancar sigue en "booting", el arranque anterior murió antes de
+ * dibujar y esta sesión desactiva multiview (y lo deja escrito) para no
+ * quedarse en bucle de crashes. */
+static char vrFilesDir[512] = "";
+extern const char *SDL_AndroidGetInternalStoragePath(void);
+
+static void vrFilePath(char *out, size_t n, const char *name) { snprintf(out, n, "%s/%s", vrFilesDir, name); }
+static int vrReadFlag(const char *name, int def) {
+    char p[600]; vrFilePath(p, sizeof(p), name);
+    FILE *f = fopen(p, "r"); if (!f) return def;
+    char buf[16] = {0}; size_t got = fread(buf, 1, sizeof(buf) - 1, f); fclose(f);
+    if (!got) return def;
+    return strncmp(buf, "booting", 7) == 0 ? -1 : atoi(buf);
+}
+static void vrWriteFlag(const char *name, const char *val) {
+    char p[600]; vrFilePath(p, sizeof(p), name);
+    FILE *f = fopen(p, "w"); if (!f) return; fputs(val, f); fclose(f);
+}
+bool TBXR_Multiview(void) { return useMultiview; }
+bool TBXR_SrgbControl(void) { return glExtensions.srgb_write_control; }
+void TBXR_MarkBootOk(void) { static bool done = false; if (done) return; done = true; vrWriteFlag("vrboot.txt", "ok"); }
+static void TBXR_DecideMultiview(void) {
+    const char *dir = SDL_AndroidGetInternalStoragePath();
+    if (dir) snprintf(vrFilesDir, sizeof(vrFilesDir), "%s", dir);
+    glFramebufferTextureMultiviewOVR_ = (PFNGLFBTEXMULTIVIEWOVR_)eglGetProcAddress("glFramebufferTextureMultiviewOVR");
+    int wanted = vrReadFlag("vrmultiview.txt", 1);
+    int boot = vrReadFlag("vrboot.txt", 1);
+    if (boot < 0 && wanted == 1) {
+        ALOGE("SauVREngine: el arranque anterior no llegó a dibujar; multiview desactivado");
+        vrWriteFlag("vrmultiview.txt", "0");
+        wanted = 0;
+    }
+    vrWriteFlag("vrboot.txt", "booting");
+    useMultiview = wanted == 1 && glExtensions.multi_view && glFramebufferTextureMultiviewOVR_ != NULL;
+    ALOGV("SauVREngine: multiview %d (pedido %d, extensión %d)", useMultiview, wanted, glExtensions.multi_view);
+}
+
 void TBXR_EnterVR( ) {
 
 	if (gAppState.Session) {
@@ -1723,11 +1793,23 @@ void TBXR_InitRenderer(  ) {
         gAppState.Projections[eye].type = XR_TYPE_VIEW;
 	}
 
+	TBXR_DecideMultiview();
+	/* SauVREngine: la swapchain es GL_SRGB8_ALPHA8 y el motor ya escribe colores
+	 * en espacio gamma (Cube 2 no es lineal), así que GLES los codificaba otra
+	 * vez: todo sobreexpuesto, que el port tapaba con vrgamedim/vrmenudim.
+	 * GL_EXT_sRGB_write_control permite desactivar esa conversión al escribir. */
+	if (glExtensions.srgb_write_control) {
+		glDisable(0x8DB9 /* GL_FRAMEBUFFER_SRGB_EXT */);
+		ALOGV("SauVREngine: sRGB write control: conversión desactivada (colores gamma directos)");
+	} else ALOGE("SauVREngine: sin GL_EXT_sRGB_write_control; la imagen irá sobreexpuesta");
 	ovrRenderer_Create(
 			gAppState.Session,
 			&gAppState.Renderer,
 			gAppState.Width,
 			gAppState.Height);
+
+	VrPerf_Init(gAppState.Instance, gAppState.Session);
+	VrPerf_SetFoveation(VR_DEFAULT_FOVEATION_LEVEL, VR_DEFAULT_FOVEATION_DYNAMIC);
 }
 
 void VR_DestroyRenderer(  )
@@ -1792,7 +1874,7 @@ void TBXR_InitialiseOpenXR()
 	OXR(xrEnumerateInstanceExtensionProperties(
 			NULL, availableExtensionCount, &availableExtensionCount, availableExtensions));
 
-	const char* enabledExtensions[16];
+	const char* enabledExtensions[32];
 	uint32_t enabledExtensionCount = 0;
 	TBXR_AddExtensionIfAvailable(
 			availableExtensions,
@@ -1851,6 +1933,26 @@ void TBXR_InitialiseOpenXR()
 				XR_FB_COLOR_SPACE_EXTENSION_NAME,
 				enabledExtensions,
 				&enabledExtensionCount);
+		/* SauVREngine: métricas de frame (CPU/GPU app y compositor) y foveado
+		 * fijo. Opcionales; ver VrPerf.c. */
+		vrPerfMetricsSupported = TBXR_AddExtensionIfAvailable(
+				availableExtensions, availableExtensionCount,
+				XR_META_PERFORMANCE_METRICS_EXTENSION_NAME,
+				enabledExtensions, &enabledExtensionCount);
+		bool fovA = TBXR_AddExtensionIfAvailable(
+				availableExtensions, availableExtensionCount,
+				XR_FB_FOVEATION_EXTENSION_NAME,
+				enabledExtensions, &enabledExtensionCount);
+		bool fovB = TBXR_AddExtensionIfAvailable(
+				availableExtensions, availableExtensionCount,
+				XR_FB_FOVEATION_CONFIGURATION_EXTENSION_NAME,
+				enabledExtensions, &enabledExtensionCount);
+		bool fovC = TBXR_AddExtensionIfAvailable(
+				availableExtensions, availableExtensionCount,
+				XR_FB_SWAPCHAIN_UPDATE_STATE_EXTENSION_NAME,
+				enabledExtensions, &enabledExtensionCount);
+		vrFoveationSupported = fovA && fovB && fovC;
+		ALOGV("SauVREngine: perf metrics %d, foveation %d", vrPerfMetricsSupported, vrFoveationSupported);
 	}
 
 	instanceCreateInfo.enabledExtensionCount = enabledExtensionCount;
@@ -2246,7 +2348,7 @@ void TBXR_submitFrame()
 		projection_layer.views = projection_layer_elements;
 
 		for (int eye = 0; eye < ovrMaxNumEyes; eye++) {
-			ovrFramebuffer* frameBuffer = &gAppState.Renderer.FrameBuffer[eye];
+			ovrFramebuffer* frameBuffer = &gAppState.Renderer.FrameBuffer[useMultiview ? 0 : eye];
 
 			memset(&projection_layer_elements[eye], 0, sizeof(XrCompositionLayerProjectionView));
 			projection_layer_elements[eye].type = XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW;
@@ -2262,7 +2364,7 @@ void TBXR_submitFrame()
 					frameBuffer->ColorSwapChain.Width;
 			projection_layer_elements[eye].subImage.imageRect.extent.height =
 					frameBuffer->ColorSwapChain.Height;
-			projection_layer_elements[eye].subImage.imageArrayIndex = 0;
+			projection_layer_elements[eye].subImage.imageArrayIndex = useMultiview ? eye : 0;
 		}
 
 		gAppState.Layers[gAppState.LayerCount++].Projection = projection_layer;

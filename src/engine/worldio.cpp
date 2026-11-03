@@ -1,6 +1,9 @@
 // worldio.cpp: loading & saving of maps and savegames
 
 #include "engine.h"
+#ifdef __ANDROID__
+#include "androidbridge.h"
+#endif
 
 void validmapname(char *dst, const char *src, const char *prefix = NULL, const char *alt = "untitled", size_t maxlen = 100)
 {
@@ -999,10 +1002,106 @@ static uint mapcrc = 0;
 uint getmapcrc() { return mapcrc; }
 void clearmapcrc() { mapcrc = 0; }
 
+// ---- PVS en fichero aparte (SauVREngine) ------------------------------------
+// Formato: int numviewcells, uint mapcrc, y lo mismo que savepvs() escribe
+// dentro del .ogz. Se escribe en el directorio de trabajo (en Android, el
+// almacenamiento interno donde se extraen los assets), así que sobrevive al
+// reinicio y se regenera si el mapa cambia (crc distinto).
+VARP(vrautopvs, 0, 1, 1);
+VAR(vrpvscellsize, 8, 32, 128);
+
+static void pvsfilename(char *out)
+{
+    copystring(out, ogzname, MAXSTRLEN);
+    int len = strlen(out);
+    if(len > 4 && !strcmp(&out[len-4], ".ogz")) out[len-4] = '\0';
+    concatstring(out, ".pvs", MAXSTRLEN);
+}
+
+bool loadpvsfile()
+{
+    string name; pvsfilename(name);
+    stream *f = opengzfile(name, "rb");
+    if(!f) return false;
+    int numpvs = f->getlil<int>();
+    uint crc = f->getlil<uint>();
+    if(numpvs <= 0 || crc != mapcrc) { delete f; conoutf("pvs %s descartado (mapa distinto)", name); return false; }
+    clearpvs();
+    loadpvs(f, numpvs);
+    delete f;
+    conoutf("pvs cargado de %s: %d celdas", name, getnumviewcells());
+    return getnumviewcells() > 0;
+}
+
+bool savepvsfile()
+{
+    if(getnumviewcells() <= 0) { conoutf(CON_WARN, "no hay pvs que guardar"); return false; }
+    string name; pvsfilename(name);
+    stream *f = opengzfile(name, "wb");
+    if(!f) { conoutf(CON_WARN, "no se pudo escribir %s", name); return false; }
+    f->putlil<int>(getnumviewcells());
+    f->putlil<uint>(mapcrc);
+    savepvs(f);
+    delete f;
+    conoutf("pvs guardado en %s: %d celdas", name, getnumviewcells());
+    return true;
+}
+
+void autopvs()
+{
+    if(loadpvsfile()) return;
+    genpvsbackground(vrpvscellsize); // guarda el fichero al terminar (checkpvsbackground)
+}
+COMMANDN(genpvsfile, autopvs, "");
+ICOMMAND(savepvsfile, "", (), intret(savepvsfile() ? 1 : 0));
+ICOMMAND(pvscells, "", (), intret(getnumviewcells()));
+
+// Cámara de prueba sobre la primera superficie de agua del mapa (para comparar
+// capturas del visor y del build de escritorio desde el mismo punto).
+ICOMMAND(watercam, "", (),
+{
+    loopv(valist)
+    {
+        vtxarray *va = valist[i];
+        loopj(va->matsurfs)
+        {
+            materialsurface &m = va->matbuf[j];
+            if((m.material&MATF_VOLUME) != MAT_WATER || m.orient != O_TOP) continue;
+            vec c(m.o.x + m.csize*0.5f, m.o.y + m.rsize*0.5f, m.o.z);
+            vec pos = vec(c).add(vec(0, -28, 70));
+            vec dir = vec(c).sub(pos).normalize();
+            float yaw; float pitch; vectoyawpitch(dir, yaw, pitch);
+            player->o = pos; player->newpos = pos; player->yaw = yaw; player->pitch = pitch; player->roll = 0;
+            player->resetinterp();
+            conoutf("watercam: agua en %.0f %.0f %.0f", c.x, c.y, c.z);
+            return;
+        }
+    }
+    conoutf(CON_WARN, "watercam: el mapa no tiene agua");
+});
+
+// Horneado desde línea de comandos (tools/desktop/bake-pvs.mjs):
+//   sauerbraten.exe -q<home> -x"pvsbake duel7 32"  (cwd = carpeta con data/ y packages/)
+// Carga el mapa, genera el PVS de forma síncrona, guarda <mapa>.pvs y sale.
+extern void quit();
+ICOMMAND(pvsbake, "si", (char *map, int *cs),
+{
+    if(!load_world(map)) { conoutf(CON_ERROR, "pvsbake: no se pudo cargar %s", map); quit(); return; }
+    int cell = *cs > 0 ? *cs : 32;
+    clearpvs();
+    genpvs(&cell);
+    if(getnumviewcells() > 0) savepvsfile();
+    else conoutf(CON_ERROR, "pvsbake: sin celdas");
+    quit();
+});
+
 bool load_world(const char *mname, const char *cname)        // still supports all map formats that have existed since the earliest cube betas!
 {
     int loadingstart = SDL_GetTicks();
     setmapfilenames(mname, cname);
+#ifdef __ANDROID__
+    { defformatstring(tl, "sauvr mapload %s", mname); android_vr_telemetry(tl); }
+#endif
     stream *f = opengzfile(ogzname, "rb");
     if(!f) { conoutf(CON_ERROR, "could not read map %s", ogzname); return false; }
     octaheader hdr;
@@ -1242,6 +1341,9 @@ bool load_world(const char *mname, const char *cname)        // still supports a
     delete f;
 
     conoutf("read map %s (%.1f seconds)", ogzname, (SDL_GetTicks()-loadingstart)/1000.0f);
+#ifdef __ANDROID__
+    { defformatstring(tl, "sauvr mapread %s %.1fs lightmaps=%d pvs=%d", mname, (SDL_GetTicks()-loadingstart)/1000.0f, lightmaps.length(), getnumviewcells()); android_vr_telemetry(tl); }
+#endif
 
     clearmainmenu();
 
@@ -1266,6 +1368,15 @@ bool load_world(const char *mname, const char *cname)        // still supports a
     attachentities();
     initlights();
     allchanged(true);
+
+#ifdef __ANDROID__
+    // SauVREngine: la mayoría de mapas (duel7 incluido) no traen PVS, y en
+    // Android la oclusión por hardware está apagada, así que sin PVS se dibuja
+    // todo lo que cae en el frustum aunque haya una pared delante. Generarlo
+    // una vez (unos segundos) y guardarlo junto al mapa como <mapa>.pvs.
+    if(vrautopvs && getnumviewcells() == 0) autopvs();
+#endif
+
 
     renderbackground("loading...", mapshot, mname, game::getmapinfo());
 

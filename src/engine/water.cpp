@@ -1,5 +1,26 @@
 #include "engine.h"
 
+#ifdef __ANDROID__
+#ifndef GL_TEXTURE_2D_ARRAY
+#define GL_TEXTURE_2D_ARRAY 0x8C1A
+#endif
+#ifndef GL_DEPTH_COMPONENT24
+#define GL_DEPTH_COMPONENT24 0x81A6
+#endif
+#ifndef GL_RGBA8
+#define GL_RGBA8 0x8058
+#endif
+static inline GLenum vrwatertarget() { return vrmultiviewactive ? GL_TEXTURE_2D_ARRAY : GL_TEXTURE_2D; }
+static inline void vrwaterattach(GLuint tex)
+{
+    if(vrmultiviewactive) vrmvattach(GL_COLOR_ATTACHMENT0, tex);
+    else glFramebufferTexture2D_(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
+}
+#else
+static inline GLenum vrwatertarget() { return GL_TEXTURE_2D; }
+static inline void vrwaterattach(GLuint tex) { glFramebufferTexture2D_(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0); }
+#endif
+
 VARFP(waterreflect, 0, 1, 1, { cleanreflections(); preloadwatershaders(); });
 VARFP(waterrefract, 0, 1, 1, { cleanreflections(); preloadwatershaders(); });
 VARFP(waterenvmap, 0, 1, 1, { cleanreflections(); preloadwatershaders(); });
@@ -271,11 +292,13 @@ struct Reflection
     GLuint tex, refracttex;
     int material, height, depth, age;
     bool init;
+    bool rendered; // ya se dibujó al menos una vez con el plano actual (SauVREngine: refresco escalonado)
     matrix4 projmat;
+    matrix4 projmat2[2]; // multiview: una por ojo
     occludequery *query, *prevquery;
     vector<materialsurface *> matsurfs;
 
-    Reflection() : tex(0), refracttex(0), material(-1), height(-1), depth(0), age(0), init(false), query(NULL), prevquery(NULL)
+    Reflection() : tex(0), refracttex(0), material(-1), height(-1), depth(0), age(0), init(false), rendered(false), query(NULL), prevquery(NULL)
     {}
 };
 
@@ -331,14 +354,20 @@ void setprojtexmatrix(Reflection &ref)
     {
         ref.init = false;
         (ref.projmat = camprojmatrix).projective();
+#ifdef __ANDROID__
+        if(vrmultiviewactive) { geteyecamprojs(ref.projmat2); loopi(2) ref.projmat2[i].projective(); }
+#endif
     }
-    
+#ifdef __ANDROID__
+    if(vrmultiviewactive) { LOCALPARAMV(watermatrix, ref.projmat2, 2); return; }
+#endif
     LOCALPARAM(watermatrix, ref.projmat);
 }
 
 Reflection reflections[MAXREFLECTIONS];
 Reflection waterfallrefraction;
 GLuint reflectionfb = 0, reflectiondb = 0;
+int vrreflectdraws = 0, vrreflectvisible = 0; // telemetría: reflejos dibujados / superficies candidatas por segundo
 
 GLuint getwaterfalltex() { return waterfallrefraction.refracttex ? waterfallrefraction.refracttex : notexture->id; }
 
@@ -456,14 +485,14 @@ void renderwater()
         {
             if(waterreflect || waterrefract)
             {
-                if(waterreflect || !waterenvmap) glBindTexture(GL_TEXTURE_2D, waterreflect ? ref.tex : ref.refracttex);
+                if(waterreflect || !waterenvmap) glBindTexture(vrwatertarget(), waterreflect ? ref.tex : ref.refracttex);
                 setprojtexmatrix(ref);
             }
 
             if(waterrefract)
             {
                 glActiveTexture_(GL_TEXTURE3);
-                glBindTexture(GL_TEXTURE_2D, ref.refracttex);
+                glBindTexture(vrwatertarget(), ref.refracttex);
                 if(waterfade) 
                 {
                     float fadeheight = ref.height+offset+(below ? -2 : 2);
@@ -549,6 +578,7 @@ void cleanreflection(Reflection &ref)
     ref.material = -1;
     ref.height = -1;
     ref.init = false;
+    ref.rendered = false;
     ref.query = ref.prevquery = NULL;
     ref.matsurfs.setsize(0);
     if(ref.tex)
@@ -574,15 +604,40 @@ void cleanreflections()
     }
     if(reflectiondb)
     {
-        glDeleteRenderbuffers_(1, &reflectiondb);
+        {
+#ifdef __ANDROID__
+            if(vrmultiviewactive) glDeleteTextures(1, &reflectiondb); else
+#endif
+            glDeleteRenderbuffers_(1, &reflectiondb);
+        }
         reflectiondb = 0;
     }
 }
 
 VARFP(reflectsize, 6, 8, 11, cleanreflections());
 
+
 void genwatertex(GLuint &tex, GLuint &fb, GLuint &db, bool refract = false)
 {
+#ifdef __ANDROID__
+    if(vrmultiviewactive)
+    {
+        // Multiview: reflejo y refracción en texturas array de 2 capas (una por
+        // ojo), renderizadas en un solo pase con el mismo shader que la escena.
+        int size = 1<<reflectsize;
+        while(size>hwtexsize) size /= 2;
+        glGenTextures(1, &tex);
+        vrmvcreatearray(tex, size, size, GL_RGBA8, false, 1);
+        if(!fb) glGenFramebuffers_(1, &fb);
+        if(!db) { glGenTextures(1, &db); vrmvcreatearray(db, size, size, GL_DEPTH_COMPONENT24, true, 0); }
+        glBindFramebuffer_(GL_FRAMEBUFFER, fb);
+        vrmvattach(GL_COLOR_ATTACHMENT0, tex);
+        vrmvattach(GL_DEPTH_ATTACHMENT, db);
+        if(glCheckFramebufferStatus_(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) conoutf(CON_ERROR, "multiview: FBO de agua incompleto");
+        glBindFramebuffer_(GL_FRAMEBUFFER, defaultfb());
+        return;
+    }
+#endif
     static const GLenum colorfmts[] = { GL_RGBA, GL_RGBA8, GL_RGB, GL_RGB8, GL_FALSE },
                         depthfmts[] = { GL_DEPTH_COMPONENT24, GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT16, GL_DEPTH_COMPONENT32, GL_FALSE };
     static GLenum reflectfmt = GL_FALSE, refractfmt = GL_FALSE, depthfmt = GL_FALSE;
@@ -648,6 +703,7 @@ void addwaterfallrefraction(materialsurface &m)
     {
         ref.age = -1;
         ref.init = false;
+        ref.rendered = false;
         ref.matsurfs.setsize(0);
         ref.material = MAT_WATER;
         ref.height = INT_MAX;
@@ -692,6 +748,7 @@ void addreflection(materialsurface &m)
     rplanes++;
     ref->age = -1;
     ref->init = false;
+    ref->rendered = false;
     ref->matsurfs.setsize(0);
     ref->matsurfs.add(&m);
     ref->depth = m.depth;
@@ -778,7 +835,7 @@ void queryreflections()
                 }
                 lastmat = m.material;
             }
-            if(m.orient==O_TOP) addreflection(m);
+            if(m.orient==O_TOP) { addreflection(m); vrreflectvisible++; }
             else addwaterfallrefraction(m);
         }
     }
@@ -881,7 +938,7 @@ void maskreflection(Reflection &ref, float offset, bool reflect, bool clear = fa
 VAR(reflectscissor, 0, 1, 1);
 VAR(reflectvfc, 0, 1, 1);
 
-static bool calcscissorbox(Reflection &ref, int size, vec &clipmin, vec &clipmax, int &sx, int &sy, int &sw, int &sh)
+static bool calcscissorbox(Reflection &ref, int size, const matrix4 &proj, vec &clipmin, vec &clipmax, int &sx, int &sy, int &sw, int &sh)
 {
     materialsurface &m0 = *ref.matsurfs[0];
     int dim = dimension(m0.orient), r = R[dim], c = C[dim];
@@ -904,7 +961,7 @@ static bool calcscissorbox(Reflection &ref, int size, vec &clipmin, vec &clipmax
     loopi(8)
     {
         vec4 &p = v[i];
-        camprojmatrix.transform(vec(i&1 ? bbmax.x : bbmin.x, i&2 ? bbmax.y : bbmin.y, (i&4 ? bbmax.z + WATER_AMPLITUDE : bbmin.z - WATER_AMPLITUDE) - WATER_OFFSET), p);
+        proj.transform(vec(i&1 ? bbmax.x : bbmin.x, i&2 ? bbmax.y : bbmin.y, (i&4 ? bbmax.z + WATER_AMPLITUDE : bbmin.z - WATER_AMPLITUDE) - WATER_OFFSET), p);
         if(p.z >= -p.w)
         {
             float x = p.x / p.w, y = p.y / p.w;
@@ -952,11 +1009,47 @@ static bool calcscissorbox(Reflection &ref, int size, vec &clipmin, vec &clipmax
     return true;
 }
 
+// Recorte del reflejo. Con multiview la textura de reflejo tiene una capa por ojo y
+// un único scissor para las dos: se usa la unión de las cajas de ambos ojos. Si
+// alguna caja no permite recorte, no se recorta. En envmaps/minimapa no se recorta.
+static bool calcreflectscissor(Reflection &ref, int size, vec &clipmin, vec &clipmax, int &sx, int &sy, int &sw, int &sh)
+{
+    if(!vrmultiviewactive) return calcscissorbox(ref, size, camprojmatrix, clipmin, clipmax, sx, sy, sw, sh);
+    if(drawtex) return false;
+    matrix4 eyeproj[2];
+    geteyecamprojs(eyeproj);
+    vec clipmin1(-1, -1, -1), clipmax1(1, 1, 1);
+    int sx1, sy1, sw1, sh1;
+    if(!calcscissorbox(ref, size, eyeproj[0], clipmin, clipmax, sx, sy, sw, sh)) return false;
+    if(!calcscissorbox(ref, size, eyeproj[1], clipmin1, clipmax1, sx1, sy1, sw1, sh1)) return false;
+    int x1 = min(sx, sx1), y1 = min(sy, sy1), x2 = max(sx+sw, sx1+sw1), y2 = max(sy+sh, sy1+sh1);
+    sx = x1; sy = y1; sw = x2-x1; sh = y2-y1;
+    clipmin = vec(min(clipmin.x, clipmin1.x), min(clipmin.y, clipmin1.y), min(clipmin.z, clipmin1.z));
+    clipmax = vec(max(clipmax.x, clipmax1.x), max(clipmax.y, clipmax1.y), max(clipmax.z, clipmax1.z));
+    return true;
+}
+
 VARR(refractclear, 0, 0, 1);
+
+#ifdef __ANDROID__
+// Reflejo y refracción del agua se renderizan una vez por frame (ojo izquierdo) y
+// el ojo derecho reutiliza las texturas: el desfase de ~6 cm entre ojos es
+// inapreciable en un plano de agua y ahorra hasta 4 renders de escena por frame.
+VARP(vrsharereflections, 0, 1, 1);
+extern int androidEyeIndex;
+// Refresco escalonado de los reflejos: un plano ya dibujado se redibuja cada vrreflectevery
+// frames y los planos se reparten entre frames (1 = cada frame, como antes).
+VARP(vrreflectevery, 1, 2, 8);
+static int vrreflectframe = 0;
+#endif
 
 void drawreflections()
 {
     if((editmode && showmat && !drawtex) || drawtex == DRAWTEX_MINIMAP) return;
+#ifdef __ANDROID__
+    if(vrsharereflections && androidEyeIndex > 0 && !drawtex) return;
+    if(!drawtex) vrreflectframe++;
+#endif
 
     static int lastdrawn = 0;
     int refs = 0, n = lastdrawn;
@@ -968,6 +1061,10 @@ void drawreflections()
     {
         Reflection &ref = reflections[++n%MAXREFLECTIONS];
         if(ref.height<0 || ref.age || ref.matsurfs.empty()) continue;
+#ifdef __ANDROID__
+        // Plano ya dibujado que no le toca este frame: se queda el reflejo anterior.
+        if(!drawtex && ref.rendered && vrreflectevery > 1 && (vrreflectframe + n%MAXREFLECTIONS) % vrreflectevery) continue;
+#endif
         if(oqfrags && oqwater && ref.query && ref.query->owner==&ref)
         { 
             if(!ref.prevquery || ref.prevquery->owner!=&ref || checkquery(ref.prevquery))
@@ -981,13 +1078,14 @@ void drawreflections()
             glViewport(0, 0, size, size);
             glBindFramebuffer_(GL_FRAMEBUFFER, reflectionfb);
         }
-        refs++;
+        refs++; vrreflectdraws++;
         ref.init = true;
+        ref.rendered = true;
         lastdrawn = n;
 
         vec clipmin(-1, -1, -1), clipmax(1, 1, 1);
         int sx, sy, sw, sh;
-        bool scissor = reflectscissor && calcscissorbox(ref, size, clipmin, clipmax, sx, sy, sw, sh);
+        bool scissor = reflectscissor && calcreflectscissor(ref, size, clipmin, clipmax, sx, sy, sw, sh);
         if(scissor) glScissor(sx, sy, sw, sh);
         else
         {
@@ -1000,7 +1098,7 @@ void drawreflections()
 
         if(waterreflect && ref.tex && camera1->o.z >= ref.height+offset)
         {
-            glFramebufferTexture2D_(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, ref.tex, 0);
+            vrwaterattach(ref.tex);
             if(scissor) glEnable(GL_SCISSOR_TEST);
             maskreflection(ref, offset, true);
             savevfcP();
@@ -1012,7 +1110,7 @@ void drawreflections()
 
         if(waterrefract && ref.refracttex)
         {
-            glFramebufferTexture2D_(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, ref.refracttex, 0);
+            vrwaterattach(ref.refracttex);
             if(scissor) glEnable(GL_SCISSOR_TEST);
             maskreflection(ref, offset, false, refractclear || !wfog || (ref.depth>=10000 && camera1->o.z >= ref.height + offset));
             if(wfog || waterfade)
@@ -1051,7 +1149,7 @@ void drawreflections()
 
         vec clipmin(-1, -1, -1), clipmax(1, 1, 1);
         int sx, sy, sw, sh;
-        bool scissor = reflectscissor && calcscissorbox(ref, size, clipmin, clipmax, sx, sy, sw, sh);
+        bool scissor = reflectscissor && calcreflectscissor(ref, size, clipmin, clipmax, sx, sy, sw, sh);
         if(scissor) glScissor(sx, sy, sw, sh);
         else
         {
@@ -1059,7 +1157,7 @@ void drawreflections()
             sw = sh = size;
         }
 
-        glFramebufferTexture2D_(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, ref.refracttex, 0);
+        vrwaterattach(ref.refracttex);
         if(scissor) glEnable(GL_SCISSOR_TEST);
         maskreflection(ref, -0.1f, false);
         savevfcP();

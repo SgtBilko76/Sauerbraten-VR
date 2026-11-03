@@ -1206,6 +1206,7 @@ vtxarray *newva(const ivec &co, int size)
 
     vtxarray *va = new vtxarray;
     va->parent = NULL;
+    va->shadowedlast = false;
     va->o = co;
     va->size = size;
     va->skyarea = vc.skyarea;
@@ -1589,9 +1590,18 @@ static inline int setcubevisibility(cube &c, const ivec &co, int size)
     return numvis;
 }
 
+#ifdef __ANDROID__
+// SauVREngine: el límite en Quest es la CPU por draw call (350 draws para 20k
+// tris en duel7). VAs más grandes = menos VAs = menos lotes por textura; el
+// PVS sigue recortando por VA y la GPU tiene margen para el sobrante.
+VARF(vafacemax, 64, 1024, 256*256, allchanged());
+VARF(vafacemin, 0, 256, 256*256, allchanged());
+VARF(vacubesize, 32, 256, 0x1000, allchanged());
+#else
 VARF(vafacemax, 64, 384, 256*256, allchanged());
 VARF(vafacemin, 0, 96, 256*256, allchanged());
 VARF(vacubesize, 32, 128, 0x1000, allchanged());
+#endif
 
 int updateva(cube *c, const ivec &co, int size, int csi)
 {
@@ -1801,3 +1811,43 @@ void recalc()
 
 COMMAND(recalc, "");
 
+
+// SauVREngine: estadísticas del mapa cargado para elegir/medir mapas desde el PC
+// (tools/desktop): triángulos y vértices del mundo, VAs y lightmaps.
+ICOMMAND(mapstats, "", (), {
+    extern vector<LightMapTexture> lightmaptexs; extern vector<LightMap> lightmaps;
+    conoutf("mapstats wtris=%d wverts=%d va=%d lightmaps=%d lmtex=%d worldsize=%d", wtris, wverts, allocva, lightmaps.length(), lightmaptexs.length(), worldsize);
+});
+
+// SauVREngine: dependencias reales del mapa cargado (slots de textura usados por
+// algún cubo, mapmodels colocados y skybox), para que tools/desktop/import-map.mjs
+// copie a la APK solo lo que el mapa necesita.
+static void mapdepscubes(cube *c, vector<int> &used)
+{
+    loopi(8)
+    {
+        if(c[i].children) mapdepscubes(c[i].children, used);
+        else if(!isempty(c[i])) loopj(6) { int t = c[i].texture[j]; if(used.find(t) < 0) used.add(t); }
+    }
+}
+ICOMMAND(mapdeps, "", (), {
+    extern vector<VSlot *> vslots; extern vector<mapmodelinfo> mapmodels; extern char *skybox;
+    vector<int> used; mapdepscubes(worldroot, used);
+    used.sort();
+    loopv(used)
+    {
+        int vi = used[i]; if(!vslots.inrange(vi)) continue;
+        Slot &s = *vslots[vi]->slot;
+        string line; formatstring(line, "dep slot %d", s.index);
+        static const char *textypes = "cudngszae"; // orden de TEX_DIFFUSE.. en texture.h
+        loopvj(s.sts) { int ty = s.sts[j].type; defformatstring(t, " %c:%s", ty >= 0 && ty < 9 ? textypes[ty] : "?"[0], s.sts[j].name); concatstring(line, t); }
+        conoutf("%s", line);
+    }
+    vector<int> models;
+    const vector<extentity *> &ents = entities::getents();
+    loopv(ents) if(ents[i]->type==ET_MAPMODEL && models.find(ents[i]->attr2) < 0) models.add(ents[i]->attr2);
+    loopv(models) if(mapmodels.inrange(models[i])) conoutf("dep model %s", mapmodels[models[i]].name);
+    conoutf("dep sky %s", skybox);
+    { int np = 0; int nl = 0; int nm = 0; loopv(ents) { if(ents[i]->type==ET_PARTICLES) np++; else if(ents[i]->type==ET_LIGHT) nl++; else if(ents[i]->type==ET_MAPMODEL) nm++; } conoutf("dep ents particles=%d lights=%d mapmodels=%d total=%d", np, nl, nm, ents.length()); }
+    conoutf("dep end slots=%d models=%d", used.length(), models.length());
+});

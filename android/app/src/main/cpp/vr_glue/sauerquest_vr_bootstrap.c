@@ -27,6 +27,44 @@
 
 #include "VrCommon.h"
 #include "androidbridge.h"
+#include "VrPerf.h"
+#include "VrTelemetry.h"
+#include <time.h>
+#include <signal.h>
+#include <ucontext.h>
+
+/* ---- Aviso de crash por telemetría: señal, dirección del fallo y PC, antes
+ * de morir. No es async-signal-safe en sentido estricto, pero en la práctica
+ * un sendto desde el handler llega y es la única pista sin logcat. */
+static void vrCrashHandler(int sig, siginfo_t *info, void *uc)
+{
+    char line[256];
+    void *pc = NULL;
+#if defined(__aarch64__)
+    if (uc) pc = (void *)((ucontext_t *)uc)->uc_mcontext.pc;
+#endif
+    snprintf(line, sizeof(line), "sauvr crash sig=%d code=%d addr=%p pc=%p", sig, info ? info->si_code : 0, info ? info->si_addr : NULL, pc);
+    VrTelemetry_Send(line);
+    usleep(200000);
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
+static void vrInstallCrashHandler(void)
+{
+    struct sigaction sa; memset(&sa, 0, sizeof(sa));
+    sa.sa_sigaction = vrCrashHandler; sa.sa_flags = SA_SIGINFO | SA_RESETHAND;
+    sigaction(SIGSEGV, &sa, NULL); sigaction(SIGBUS, &sa, NULL); sigaction(SIGABRT, &sa, NULL); sigaction(SIGFPE, &sa, NULL); sigaction(SIGILL, &sa, NULL);
+}
+
+static double vrGlueWait = 0, vrGlueSubmit = 0, vrGlueTotal = 0; static int vrGlueFrames = 0;
+static double nowms(void) { struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts); return ts.tv_sec * 1000.0 + ts.tv_nsec / 1e6; }
+int android_vr_get_frametimes(float *waitms, float *submitms, float *totalms)
+{
+    int n = vrGlueFrames > 0 ? vrGlueFrames : 1;
+    *waitms = (float)(vrGlueWait / n); *submitms = (float)(vrGlueSubmit / n); *totalms = (float)(vrGlueTotal / n);
+    int frames = vrGlueFrames; vrGlueWait = vrGlueSubmit = vrGlueTotal = 0; vrGlueFrames = 0;
+    return frames;
+}
 
 /* Same local definition TBXR_Common.c uses (DarkPlaces normally pulls
  * this in transitively via its own mathlib.h). */
@@ -448,6 +486,105 @@ void android_get_eye_size(int *w, int *h)
     *h = (int)gAppState.Height;
 }
 
+int android_vr_get_metrics(android_vr_metrics *m)
+{
+    VrPerfMetrics p;
+    int ok = VrPerf_Query(&p);
+    m->appCpuMs = p.appCpuMs; m->appGpuMs = p.appGpuMs;
+    m->compCpuMs = p.compCpuMs; m->compGpuMs = p.compGpuMs; m->latencyMs = p.latencyMs;
+    m->cpuUtilAvg = p.cpuUtilAvg; m->cpuUtilWorst = p.cpuUtilWorst; m->gpuUtil = p.gpuUtil;
+    m->droppedFrames = p.droppedFrames; m->foveationLevel = p.foveationLevel; m->foveationApplied = p.foveationApplied;
+    m->foveationDynamic = p.foveationDynamic; m->refreshHz = p.refreshHz;
+    return ok;
+}
+
+void android_vr_set_foveation(int level, int dynamic)
+{
+    VrPerf_SetFoveation(level, dynamic);
+}
+
+void android_vr_telemetry(const char *line)
+{
+    VrTelemetry_Send(line);
+}
+
+int android_vr_unicast(void) { return VrTelemetry_HaveServer(); }
+#include "VrBuild.h" /* generada por tools/apk/build-apk.mjs en cada build */
+#ifndef SAUVR_VNAME
+#define SAUVR_VNAME "dev"
+#endif
+const char *android_vr_build(void) { return SAUVR_VNAME; }
+int android_vr_status(char *buf, int len) { return VrTelemetry_Status(buf, (size_t)len); }
+int android_vr_srgbcontrol(void) { return TBXR_SrgbControl() ? 1 : 0; }
+
+int android_vr_multiview(void)
+{
+    return TBXR_Multiview() ? 1 : 0;
+}
+
+/* ---- Captura de pantalla al PC ------------------------------------------
+ * Se llama con el framebuffer del ojo enlazado. Lee la capa 0 (ojo izquierdo)
+ * por un FBO de lectura normal, reduce 3x, y un hilo aparte manda los trozos
+ * por UDP (cabecera de texto + paquetes "SVRI" id seq rgb) sin parar el render. */
+typedef struct { unsigned char *rgb; int w, h, id; } VrCaptureJob;
+static void *vrCaptureSend(void *arg)
+{
+    VrCaptureJob *job = (VrCaptureJob *)arg;
+    const int CHUNK = 1200;
+    size_t total = (size_t)job->w * job->h * 3;
+    int nchunks = (int)((total + CHUNK - 1) / CHUNK);
+    char head[96];
+    snprintf(head, sizeof(head), "sauvrimg begin %d %d %d %d", job->w, job->h, nchunks, job->id);
+    VrTelemetry_Send(head);
+    unsigned char pkt[7 + 1200];
+    memcpy(pkt, "SVRI", 4); pkt[4] = (unsigned char)job->id;
+    for (int i = 0; i < nchunks; i++) {
+        size_t off = (size_t)i * CHUNK, len = total - off < CHUNK ? total - off : CHUNK;
+        pkt[5] = i & 0xff; pkt[6] = (i >> 8) & 0xff;
+        memcpy(pkt + 7, job->rgb + off, len);
+        VrTelemetry_SendRaw(pkt, 7 + len);
+        usleep(VrTelemetry_HaveServer() ? 1200 : 4000); /* ~1 MB/s en unicast; broadcast mucho más lento */
+    }
+    free(job->rgb); free(job);
+    return NULL;
+}
+
+void android_vr_capture(int scale)
+{
+    ovrFramebuffer *fb = &gAppState.Renderer.FrameBuffer[0];
+    if (fb->ColorSwapChain.Handle == XR_NULL_HANDLE || !fb->ColorSwapChainImage) return;
+    GLuint tex = fb->ColorSwapChainImage[fb->TextureSwapChainIndex].image;
+    int w = (int)fb->ColorSwapChain.Width, h = (int)fb->ColorSwapChain.Height;
+    static GLuint readfb = 0;
+    if (!readfb) glGenFramebuffers(1, &readfb);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, readfb);
+    if (fb->Multiview) glFramebufferTextureLayer(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, tex, 0, 0);
+    else glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
+    unsigned char *full = (unsigned char *)malloc((size_t)w * h * 4);
+    if (full) {
+        glPixelStorei(GL_PACK_ALIGNMENT, 1);
+        glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, full);
+    }
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, fb->FrameBuffers[fb->TextureSwapChainIndex]);
+    if (!full) return;
+    const int S = scale >= 1 && scale <= 8 ? scale : 3;
+    int ow = w / S, oh = h / S;
+    VrCaptureJob *job = (VrCaptureJob *)malloc(sizeof(VrCaptureJob));
+    job->rgb = (unsigned char *)malloc((size_t)ow * oh * 3);
+    job->w = ow; job->h = oh;
+    static int capid = 0; job->id = (++capid) & 0xff;
+    for (int y = 0; y < oh; y++) {
+        const unsigned char *src = full + ((size_t)(h - 1 - y * S) * w) * 4; /* GL: fila 0 abajo */
+        unsigned char *dst = job->rgb + (size_t)y * ow * 3;
+        for (int x = 0; x < ow; x++) { const unsigned char *p = src + (size_t)x * S * 4; dst[x*3] = p[0]; dst[x*3+1] = p[1]; dst[x*3+2] = p[2]; }
+    }
+    free(full);
+    pthread_t th;
+    if (pthread_create(&th, NULL, vrCaptureSend, job) == 0) { pthread_detach(th); VrTelemetry_NoteCapture(); }
+    else { free(job->rgb); free(job); }
+}
+
 void *AppThreadFunction(void *parm)
 {
     gAppThread = (ovrAppThread *)parm;
@@ -467,6 +604,8 @@ void *AppThreadFunction(void *parm)
     TBXR_InitRenderer();
     TBXR_InitActions();
     TBXR_WaitForSessionActive();
+    vrInstallCrashHandler();
+    { char bl[128]; snprintf(bl, sizeof(bl), "sauvr boot build=%s multiview=%d srgb=%d", android_vr_build(), TBXR_Multiview() ? 1 : 0, TBXR_SrgbControl() ? 1 : 0); VrTelemetry_Send(bl); }
 
     ALOGV("SauerQuest VR bootstrap: booting engine (%dx%d per eye)",
           (int)gAppState.Width, (int)gAppState.Height);
@@ -494,11 +633,34 @@ void *AppThreadFunction(void *parm)
 
     ALOGV("SauerQuest VR bootstrap: engine booted, entering frame loop");
 
+    double vrFrameStart = nowms();
     while (runStatus == -1) {
+        double t0 = nowms();
         TBXR_FrameSetup();
+        double t1 = nowms(); vrGlueWait += t1 - t0;
 
         android_sauer_tick();
 
+        if (TBXR_Multiview()) {
+            /* Un solo pase: el motor recibe los dos ojos y el shader elige la
+             * vista con gl_ViewID_OVR (ver docs/multiview.md). */
+            TBXR_prepareEyeBuffer(0);
+            if (gAppState.FrameState.shouldRender) {
+                float d[2][3], t[2][4];
+                for (int e = 0; e < 2; e++) {
+                    XrPosef hfe = gAppState.Projections[e].pose;
+                    XrFovf f = gAppState.Projections[e].fov;
+                    d[e][0] = -hfe.position.x; d[e][1] = -hfe.position.z; d[e][2] = hfe.position.y;
+                    t[e][0] = tanf(f.angleLeft); t[e][1] = tanf(f.angleRight); t[e][2] = tanf(f.angleUp); t[e][3] = tanf(f.angleDown);
+                }
+                android_sauer_set_eye_index(0);
+                android_sauer_set_eyes(d[0][0], d[0][1], d[0][2], d[1][0], d[1][1], d[1][2],
+                    hmdorientation[1], hmdorientation[0], hmdorientation[2],
+                    t[0][0], t[0][1], t[0][2], t[0][3], t[1][0], t[1][1], t[1][2], t[1][3]);
+                android_sauer_drawframe();
+            }
+            TBXR_finishEyeBuffer(0);
+        } else
         for (int eye = 0; eye < ovrMaxNumEyes; eye++) {
             TBXR_prepareEyeBuffer(eye);
             if (gAppState.FrameState.shouldRender) {
@@ -556,6 +718,7 @@ void *AppThreadFunction(void *parm)
                 float dy = -xfHeadFromEye.position.z;
                 float dz =  xfHeadFromEye.position.y;
 
+                android_sauer_set_eye_index(eye);
                 android_sauer_set_eye(dx, dy, dz,
                     hmdorientation[1], hmdorientation[0], hmdorientation[2],
                     tanf(fov.angleLeft), tanf(fov.angleRight), tanf(fov.angleUp), tanf(fov.angleDown));
@@ -566,7 +729,10 @@ void *AppThreadFunction(void *parm)
 
         android_sauer_endframe();
 
+        { static int vrBootFrames = 0; if (++vrBootFrames == 100) TBXR_MarkBootOk(); }
+        double t2 = nowms();
         TBXR_submitFrame();
+        double t3 = nowms(); vrGlueSubmit += t3 - t2; vrGlueTotal += t3 - vrFrameStart; vrFrameStart = t3; vrGlueFrames++;
     }
 
     TBXR_LeaveVR();
@@ -589,6 +755,23 @@ void jni_shutdown(void)
         (*jVM)->AttachCurrentThread(jVM, &env, NULL);
     }
     (*env)->CallVoidMethod(env, jniCallbackObj, android_shutdown);
+}
+
+/* Estado térmico del SO (PowerManager.getCurrentThermalStatus, Java:
+ * SauerQuestActivity.thermalStatus): 0 normal ... 6 apagado; -1 si no se sabe. */
+static jclass jActivityClass = 0;
+static jmethodID android_thermalstatus = 0;
+
+int android_vr_thermal(void)
+{
+    JNIEnv *env;
+    if (!jVM || !jActivityClass || !android_thermalstatus) return -1;
+    if (((*jVM)->GetEnv(jVM, (void **)&env, JNI_VERSION_1_4)) < 0) {
+        if ((*jVM)->AttachCurrentThread(jVM, &env, NULL) != JNI_OK) return -1;
+    }
+    jint st = (*env)->CallStaticIntMethod(env, jActivityClass, android_thermalstatus);
+    if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); return -1; }
+    return st;
 }
 
 /* No JNI_OnLoad of our own: SDL2's SDL_android.c already defines one (it
@@ -619,6 +802,11 @@ Java_org_sauerquest_vr_SauerQuestJNILib_onCreate(JNIEnv *env, jclass activityCla
 
     jclass realActivityClass = (*env)->GetObjectClass(env, activity);
     Java_org_libsdl_app_SDLActivity_nativeSetupJNI(env, realActivityClass);
+
+    /* Para android_vr_thermal(): clase global y método estático del Activity. */
+    jActivityClass = (jclass)(*env)->NewGlobalRef(env, realActivityClass);
+    android_thermalstatus = (*env)->GetStaticMethodID(env, realActivityClass, "thermalStatus", "()I");
+    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
 
     ovrAppThread *appThread = (ovrAppThread *)malloc(sizeof(ovrAppThread));
     ovrAppThread_Create(appThread, env, activity, activityClass);

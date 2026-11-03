@@ -27,11 +27,17 @@ android {
     ndkVersion '25.1.8937393'
 
     defaultConfig {
-        applicationId "org.sauerquest.vr"
+        // Id propio de SauVREngine: convive con el Sauerbraten-VR original
+        // (org.sauerquest.vr) sin conflicto de firma. El namespace y los nombres
+        // JNI (Java_org_sauerquest_vr_*) no cambian.
+        applicationId "org.sauvrengine.vr"
         minSdkVersion 29
         targetSdkVersion 32
-        versionCode 13
-        versionName "0.2"
+        // SauVREngine: tools/apk/build-apk.mjs pasa -Pvcode/-Pvname en cada build.
+        // La Activity solo re-extrae assets/ cuando cambia versionCode, así que un
+        // valor fijo dejaría data/ y packages/ viejos en el visor al actualizar.
+        versionCode (project.hasProperty("vcode") ? project.vcode.toInteger() : 13)
+        versionName (project.hasProperty("vname") ? project.vname : "0.2")
 
         externalNativeBuild {
             ndkBuild {

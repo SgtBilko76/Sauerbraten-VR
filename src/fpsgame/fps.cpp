@@ -1,5 +1,8 @@
 #include "game.h"
 
+// SauVREngine: conexión del cliente (engine/client.cpp) para las estadísticas del jugador simulado
+extern ENetPeer *curpeer; extern ENetHost *clienthost; extern int getclockmillis();
+
 namespace game
 {
     bool intermission = false;
@@ -235,6 +238,69 @@ namespace game
         }
     }
 
+    // Jugador simulado (clientes de carga para el servidor dedicado): player1 lo mueve
+    // la misma IA que los bots (ai::update lo piensa porque players[0] es player1 y
+    // tiene ai), con su propia conexión ENet, posiciones, ping y pérdida reales.
+    // Cada segundo escribe una línea "sim ..." en el log (-g) que lee tools/desktop/sim.mjs.
+    VAR(simplayer, 0, 0, 1);
+    VAR(simskill, 1, 60, 100);
+    // Anfitrión de IA (headless con privilegio de admin): cada segundo "aihost t= bots= ai_ms=".
+    VAR(aihost, 0, 0, 1);
+    VAR(aihostbots, 0, 0, 32);   // bots que debe haber; el servidor los borra al cambiar de mapa (changemap → clearai)
+    VAR(aihostskill, 1, 60, 101);
+    static int aihostms = 0, aihostframes = 0;
+    static void updateaihost()
+    {
+        if(!aihost || !connected) return;
+        static int last = 0;
+        if(totalmillis - last < 1000) return;
+        last = totalmillis;
+        int owned = 0, bots = 0;
+        int allbots = 0; loopv(players) { if(players[i]->aitype != AI_NONE) allbots++; if(players[i]->ai) { bots++; if(players[i]->ownernum == player1->clientnum) owned++; } }
+        logoutf("aihost t=%d map=%s cn=%d priv=%d allbots=%d bots=%d owned=%d ai_ms=%.2f frames=%d rtt=%u", totalmillis/1000, getclientmap(), player1->clientnum, player1->privilege, allbots, bots, owned,
+            aihostframes ? aihostms/float(aihostframes) : 0.0f, aihostframes, curpeer ? curpeer->roundTripTime : 0);
+        aihostms = aihostframes = 0;
+        // reponer bots (hasta 8 por segundo) cuando faltan: tras un cambio de mapa o al arrancar
+        static int lastadd = 0;
+        if(aihostbots > allbots && player1->privilege >= PRIV_ADMIN && maptime && lastmillis - maptime > 2000 && totalmillis - lastadd >= 1000)
+        {
+            lastadd = totalmillis;
+            int want = min(aihostbots - allbots, 8);
+            conoutf("aihost: pido %d bots (hay %d, quiero %d, priv %d, maptime %d)", want, allbots, aihostbots, player1->privilege, lastmillis - maptime);
+            loopi(want) addmsg(N_ADDBOT, "ri", aihostskill);
+        }
+    }
+    static void updatesimplayer()
+    {
+        if(!simplayer || !connected)
+        {
+            if(player1->ai && !simplayer) { delete player1->ai; player1->ai = NULL; }
+            return;
+        }
+        if(!player1->ai)
+        {
+            ai::loadwaypoints();
+            player1->ai = new ai::aiinfo;
+            player1->skill = simskill;
+            player1->aitype = AI_BOT; // ai::navigate solo asigna nodos si hay algún jugador con aitype
+            player1->ai->views[0] = ai::viewfieldx(player1->skill);
+            player1->ai->views[1] = ai::viewfieldy(player1->skill);
+            player1->ai->views[2] = ai::viewdist(player1->skill);
+            conoutf("jugador simulado: la IA mueve a %s (skill %d)", player1->name, player1->skill);
+        }
+        static int lastsim = 0; static uint lasttx = 0, lastrx = 0;
+        if(totalmillis - lastsim >= 1000)
+        {
+            lastsim = totalmillis;
+            uint tx = clienthost ? clienthost->totalSentData : 0, rx = clienthost ? clienthost->totalReceivedData : 0;
+            logoutf("sim t=%d map=%s cn=%d st=%d rtt=%u loss=%.1f tx=%u rx=%u pos=%.0f,%.0f,%.0f node=%d aist=%d mv=%d,%d yaw=%.0f/%.0f frags=%d deaths=%d owned=%d",
+                totalmillis/1000, getclientmap(), player1->clientnum, player1->state,
+                curpeer ? curpeer->roundTripTime : 0, curpeer ? curpeer->packetLoss*100.0f/ENET_PEER_PACKET_LOSS_SCALE : 0.0f,
+                tx - lasttx, rx - lastrx, player1->o.x, player1->o.y, player1->o.z, player1->lastnode, player1->ai->state.empty() ? -1 : player1->ai->getstate().type, player1->move, player1->strafe, player1->yaw, player1->ai->targyaw, player1->frags, player1->deaths, (int)[]{ int n = 0; loopv(players) if(players[i]->ai && players[i] != player1 && players[i]->ownernum == player1->clientnum) n++; return n; }());
+            lasttx = tx; lastrx = rx;
+        }
+    }
+
     void updateworld()        // main game update loop
     {
         if(!maptime) { maptime = lastmillis; maprealtime = totalmillis; return; }
@@ -248,12 +314,18 @@ namespace game
         }
         updateweapons(curtime);
         otherplayers(curtime);
-        ai::update();
+        updatesimplayer();
+        {
+            int t0 = aihost ? getclockmillis() : 0;
+            ai::update();
+            if(aihost) { aihostms += getclockmillis() - t0; aihostframes++; }
+        }
+        updateaihost();
         moveragdolls();
         gets2c();
         updatemovables(curtime);
         updatemonsters(curtime);
-        if(connected)
+        if(connected && !player1->ai) // con simplayer, ai::logic ya mueve a player1
         {
             if(player1->state == CS_DEAD)
             {

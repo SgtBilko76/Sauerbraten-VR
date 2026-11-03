@@ -136,6 +136,36 @@ extern bool pvsoccludedsphere(const vec &center, float radius);
 extern bool waterpvsoccluded(int height);
 extern void setviewcell(const vec &p);
 extern void savepvs(stream *f);
+extern void genpvs(int *viewcellsize);
+extern void clearpvs();
+extern bool loadpvsfile();
+extern bool savepvsfile();
+extern void autopvs();
+
+// Perfil de CPU por fases del frame (SauVREngine, rendergl.cpp). Acumula
+// microsegundos por fase; la telemetría lo vuelca y lo pone a cero cada segundo.
+// VRP_PSIM: simulación de partículas (updateparticles) dentro del tick, para separarla del dibujado (VRP_PARTS).
+enum { VRP_TICK = 0, VRP_CULL, VRP_GEOM, VRP_MODELS, VRP_REFLECT, VRP_WATER, VRP_ALPHA, VRP_PARTS, VRP_HUD, VRP_PSIM, VRP_COUNT };
+extern uint64_t vrprofacc[VRP_COUNT];
+extern int headless; // -H: sin pantalla (main.cpp)
+extern int vrprofframes;
+extern void vrprofstart();
+extern void vrprofmark(int phase);
+extern void genpvsbackground(int cellsize);
+extern void checkpvsbackground();
+extern int pvsbgprogress();
+extern int getfailedshaders(char *buf, size_t len);
+extern int vrmultiviewactive; // 0 en escritorio
+extern int hudmatrixmode;
+#ifdef __ANDROID__
+// multiview (rendergl.cpp): destinos fuera de pantalla como texturas array
+extern bool vrmvcreatearray(GLuint tex, int w, int h, GLenum internalfmt, bool depth, int filter);
+extern void vrmvattach(GLenum attachment, GLuint tex);
+extern void vrmvscratchbind(int size);
+extern void vrmvscratchread();
+extern int vrmvscratchsize();
+extern void geteyecamprojs(matrix4 out[2]);
+#endif
 extern void loadpvs(stream *f, int numpvs);
 extern int getnumviewcells();
 

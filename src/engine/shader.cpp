@@ -67,8 +67,28 @@ Shader *generateshader(const char *name, const char *fmt, ...)
     return s;
 }
 
+// SauVREngine: lista de shaders que han fallado al compilar o enlazar, para la
+// telemetría del visor (no hay logcat a mano). Un nombre por fallo, sin repetir.
+static vector<char *> failedshaders;
+static void recordshaderfail(const char *name)
+{
+    loopv(failedshaders) if(!strcmp(failedshaders[i], name)) return;
+    failedshaders.add(newstring(name));
+}
+int getfailedshaders(char *buf, size_t len)
+{
+    buf[0] = '\0';
+    loopv(failedshaders)
+    {
+        if(i) concatstring(buf, ",", len);
+        concatstring(buf, failedshaders[i], len);
+    }
+    return failedshaders.length();
+}
+
 static void showglslinfo(GLenum type, GLuint obj, const char *name, const char **parts = NULL, int numparts = 0)
 {
+    recordshaderfail(name);
     GLint length = 0;
     if(type) glGetShaderiv_(obj, GL_INFO_LOG_LENGTH, &length);
     else glGetProgramiv_(obj, GL_INFO_LOG_LENGTH, &length);
@@ -104,9 +124,52 @@ static void showglslinfo(GLenum type, GLuint obj, const char *name, const char *
     }
 }
 
+#ifdef __ANDROID__
+// Multiview (docs/multiview.md): cada matriz de vista pasa a ser un array de 2
+// indexado por gl_ViewID_OVR. Reescritura textual al compilar: "uniform mat4 X;"
+// -> "uniform mat4 X[2];" y el resto de usos de X -> "X[gl_ViewID_OVR]".
+static bool isidentchar(char c) { return isalnum((uchar)c) || c == '_'; }
+static void rewritemultiview(vector<char> &out, const char *src)
+{
+    static const char * const names[] = { "camprojmatrix", "skymatrix", "hudmatrix", "modelmatrix", "watermatrix" };
+    const char *p = src;
+    while(*p)
+    {
+        bool done = false;
+        if(isidentchar(*p) && (p == src || !isidentchar(p[-1]))) loopi(5)
+        {
+            const char *n = names[i]; int len = strlen(n);
+            if(strncmp(p, n, len) || isidentchar(p[len])) continue;
+            // ¿declaración "uniform mat4 X;"?
+            const char *q = p + len; while(*q == ' ' || *q == '\t') q++;
+            bool decl = false;
+            if(*q == ';')
+            {
+                const char *b = p; while(b > src && (b[-1] == ' ' || b[-1] == '\t')) b--;
+                decl = b - src >= 4 && !strncmp(b - 4, "mat4", 4);
+            }
+            loopj(len) out.add(n[j]);
+            if(decl) { out.add('['); out.add('2'); out.add(']'); }
+            else if(*q != '[') { const char *idx = "[gl_ViewID_OVR]"; while(*idx) out.add(*idx++); }
+            p += len; done = true; break;
+        }
+        if(!done) out.add(*p++);
+    }
+    out.add('\0');
+}
+#endif
+
 static void compileglslshader(GLenum type, GLuint &obj, const char *def, const char *name, bool msg = true) 
 {
     const char *source = def + strspn(def, " \t\r\n");
+#ifdef __ANDROID__
+    extern int vrmultiviewactive;
+    vector<char> mvsource;
+    // Shadow-map creation and separable blur draw into ordinary 2D FBOs.
+    // Their programs must stay single-view even while the eye renderer is multiview.
+    const bool multiviewshader = vrmultiviewactive && !strstr(source, "//:singleview");
+    if(multiviewshader) { rewritemultiview(mvsource, source); source = mvsource.getbuf(); }
+#endif
     const char *parts[16];
     int numparts = 0;
 #ifdef __ANDROID__
@@ -120,6 +183,9 @@ static void compileglslshader(GLenum type, GLuint &obj, const char *def, const c
     char glesheader[32];
     formatstring(glesheader, "#version %d es\n", glslversion);
     parts[numparts++] = glesheader;
+    if(multiviewshader) parts[numparts++] = type == GL_VERTEX_SHADER ?
+        "#extension GL_OVR_multiview2 : require\nlayout(num_views = 2) in;\n" :
+        "#extension GL_OVR_multiview2 : require\n";
 #else
     static const struct { int version; const char * const header; } glslversions[] =
     {
@@ -387,7 +453,7 @@ void Shader::allocparams(Slot *slot)
         }
         else UNIFORMTEX("lightmap", 1);
         if(type & SHADER_ENVMAP) UNIFORMTEX("envmap", tmu++);
-        UNIFORMTEX("shadowmap", 7);
+        UNIFORMTEX("shadowmap", 15);
         int stex = 0;
         loopv(slot->sts)
         {
@@ -901,32 +967,67 @@ static void genshadowmapvariant(Shader &s, const char *sname, const char *vs, co
 
     const char *vsdecl =
         "uniform mat4 shadowmapproject;\n"
-        "varying vec3 shadowmaptc;\n";
+        "uniform vec3 smcamera;\n"
+        "varying vec3 shadowmaptc;\n"
+        "varying float smviewdist;\n";
     vssm.put(vsdecl, strlen(vsdecl));
 
+    extern int smoothshadowmappeel;
     const char *psdecl =
         "uniform sampler2D shadowmap;\n"
         "uniform vec4 shadowmapambient;\n"
-        "varying vec3 shadowmaptc;\n";
+        "uniform vec2 shadowmaptexel;\n"
+        "uniform vec3 shadowfade;\n"
+        "varying vec3 shadowmaptc;\n"
+        "varying float smviewdist;\n";
     pssm.put(psdecl, strlen(psdecl));
+
+    // Desvanecimiento por distancia al jugador: 100% hasta shadowfade.x, 15% en shadowfade.y y 0 en shadowfade.z.
+    const char *smfade =
+        "float smfade(float d)\n"
+        "{\n"
+        "    if(d <= shadowfade.x) return 1.0;\n"
+        "    if(d <= shadowfade.y) return mix(1.0, 0.15, (d - shadowfade.x)/(shadowfade.y - shadowfade.x));\n"
+        "    return max(0.0, mix(0.15, 0.0, (d - shadowfade.y)/(shadowfade.z - shadowfade.y)));\n"
+        "}\n";
+    pssm.put(smfade, strlen(smfade));
+
+    // M2: un tap de sombra por texel vecino. La comparación de capas es la de antes; el receptor
+    // promedia 9 taps (PCF 3x3) y no usa marcas por bloque ni criterio por frame.
+    const char *smfunc = smoothshadowmappeel ?
+        "float smsample(vec2 uv, float zref)\n"
+        "{\n"
+        "    vec4 smvals = texture2D(shadowmap, uv);\n"
+        "    vec2 smdiff = clamp(smvals.xz - zref*smvals.y, 0.0, 1.0);\n"
+        "    return clamp((smdiff.x > 0.0 ? smvals.w : 0.0) - 8.0*smdiff.y, 0.0, 1.0);\n"
+        "}\n" :
+        "float smsample(vec2 uv, float zref)\n"
+        "{\n"
+        "    vec4 smvals = texture2D(shadowmap, uv);\n"
+        "    float smtest = zref*smvals.y;\n"
+        "    return smtest < smvals.x && smtest > smvals.z ? smvals.w : 0.0;\n"
+        "}\n";
+    pssm.put(smfunc, strlen(smfunc));
 
     vssm.put(vsmain, vspragma-vsmain);
     pssm.put(psmain, pspragma-psmain);
 
-    extern int smoothshadowmappeel;
     const char *tcgen =
-        "shadowmaptc = vec3(shadowmapproject * vvertex);\n";
+        "shadowmaptc = vec3(shadowmapproject * vvertex);\n"
+        "smviewdist = length(vvertex.xyz - smcamera);\n";
     vssm.put(tcgen, strlen(tcgen));
     const char *sm =
-        smoothshadowmappeel ? 
-            "vec4 smvals = texture2D(shadowmap, shadowmaptc.xy);\n"
-            "vec2 smdiff = clamp(smvals.xz - shadowmaptc.zz*smvals.y, 0.0, 1.0);\n"
-            "float shadowed = clamp((smdiff.x > 0.0 ? smvals.w : 0.0) - 8.0*smdiff.y, 0.0, 1.0);\n" :
-
-            "vec4 smvals = texture2D(shadowmap, shadowmaptc.xy);\n"
-            "float smtest = shadowmaptc.z*smvals.y;\n"
-            "float shadowed = smtest < smvals.x && smtest > smvals.z ? smvals.w : 0.0;\n";
+        "float shadowed = 0.0;\n"
+        "for(int smi = -1; smi <= 1; smi++)\n"
+        "for(int smj = -1; smj <= 1; smj++)\n"
+        "    shadowed += smsample(shadowmaptc.xy + vec2(float(smi), float(smj))*shadowmaptexel, shadowmaptc.z);\n"
+        "shadowed /= 9.0;\n"
+        "shadowed *= smfade(smviewdist);\n";
     pssm.put(sm, strlen(sm));
+    // SauVREngine: la sombra se desvanece en el borde del mapa (sin rectángulo visible).
+    const char *smedge =
+        "shadowed *= smoothstep(0.0, 0.2, min(min(shadowmaptc.x, 1.0-shadowmaptc.x), min(shadowmaptc.y, 1.0-shadowmaptc.y)));\n";
+    pssm.put(smedge, strlen(smedge));
     defformatstring(smlight, 
         "%s.rgb -= shadowed*clamp(%s.rgb - shadowmapambient.rgb, 0.0, 1.0);\n",
         pslight, pslight);
