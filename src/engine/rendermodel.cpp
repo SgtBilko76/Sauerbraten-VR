@@ -812,7 +812,9 @@ static inline int cullmodel(model *m, const vec &center, float radius, int flags
             }
             if(center.dist(camera1->o)-radius>reflectdist) return MDL_CULL_VFC;
         }
-        if(isfoggedsphere(radius, center)) return MDL_CULL_VFC;
+        // M1c: el pase de sombras no usa el frustum ni la niebla de la vista (vfcP): los casters fuera de
+        // la mirada tienen que proyectar sombra igual. Antes solo proyectaban cuando entraban en la vista.
+        if(!shadowmapping && isfoggedsphere(radius, center)) return MDL_CULL_VFC;
         if(shadowmapping && !isshadowmapcaster(center, radius)) return MDL_CULL_VFC;
     }
     if(shadowmapping)
