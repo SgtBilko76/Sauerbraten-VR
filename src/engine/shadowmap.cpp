@@ -324,6 +324,8 @@ void vrsmnote(const char *mdl)
 
 float vrshjump = 0;
 int vrshflip = 0, vrsmerr = 0;
+// Telemetría shrec: VAs de superficie que llevan la variante con sombra en el frame (suma; se promedia por frame).
+int vrshrec = 0;
 
 void rendershadowmap()
 {

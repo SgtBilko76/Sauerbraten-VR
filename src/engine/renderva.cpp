@@ -1392,7 +1392,7 @@ void renderva(renderstate &cur, vtxarray *va, int pass = RENDERPASS_LIGHTMAP, bo
             if(!drawtex && !glaring && !cur.alphaing)
             {
                 // Telemetría shflip: cuenta cambios respecto al frame anterior (antes comparaba con el valor ya reseteado).
-                { extern int vrshflip; bool nowsh = isshadowmapreceiver(va); if(nowsh != va->shadowedlast) vrshflip++; va->shadowedlast = nowsh; va->shadowed = nowsh; }
+                { extern int vrshflip; bool nowsh = isshadowmapreceiver(va); if(nowsh != va->shadowedlast) vrshflip++; va->shadowedlast = nowsh; va->shadowed = nowsh; extern int vrshrec; if(nowsh) vrshrec++; }
                 calcdynlightmask(va);
             }
             if(doquery) startvaquery(va, { if(geombatches.length()) renderbatches(cur, pass); });
