@@ -243,32 +243,10 @@ bool addshadowmapcaster(const vec &o, float xyrad, float zrad)
 
 bool isshadowmapreceiver(vtxarray *va)
 {
-    if(!shadowmap || !shadowmapcasters) return false;
-
-    if(va->shadowmapmax.z <= shadowfocus.z - shadowmapdist || va->shadowmapmin.z >= shadowmapmaxz) return false;
-
-    float xyrad = SQRT2*0.5f*max(va->shadowmapmax.x-va->shadowmapmin.x, va->shadowmapmax.y-va->shadowmapmin.y),
-          zrad = 0.5f*(va->shadowmapmax.z-va->shadowmapmin.z),
-          x1, y1, x2, y2;
-    if(xyrad<0 || zrad<0) return false;
-
-    vec center = vec(va->shadowmapmin).add(vec(va->shadowmapmax)).mul(0.5f);
-    calcshadowmapbb(center, xyrad, zrad, x1, y1, x2, y2);
-
-    return shadowmaptex.checkblurtiles(x1, y1, x2, y2, 2);
-
-#if 0
-    // cheaper inexact test
-    float dz = va->o.z + va->size/2 - shadowfocus.z;
-    float cx = shadowfocus.x + dz*shadowdir.x, cy = shadowfocus.y + dz*shadowdir.y;
-    float skew = va->size/2*SHADOWSKEW;
-    if(!shadowmap || !shadowmaptex ||
-       va->o.z + va->size <= shadowfocus.z - shadowmapdist || va->o.z >= shadowmapmaxz ||
-       va->o.x + va->size <= cx - shadowmapradius-skew || va->o.x >= cx + shadowmapradius+skew || 
-       va->o.y + va->size <= cy - shadowmapradius-skew || va->o.y >= cy + shadowmapradius+skew) 
-        return false;
-    return true;
-#endif
+    // M1d: todas las superficies usan la variante con sombra cuando hay mapa. Antes, el criterio dependía
+    // de la caja y del número de casters de cada frame: marcas que cambiaban y líneas rectas en los bordes.
+    // Fuera de la caja el shader devuelve sombra 0.
+    return shadowmap != 0;
 }
 
 bool isshadowmapcaster(const vec &o, float rad)
