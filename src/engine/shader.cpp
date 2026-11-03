@@ -450,7 +450,7 @@ void Shader::allocparams(Slot *slot)
         }
         else UNIFORMTEX("lightmap", 1);
         if(type & SHADER_ENVMAP) UNIFORMTEX("envmap", tmu++);
-        UNIFORMTEX("shadowmap", 7);
+        UNIFORMTEX("shadowmap", 15);
         int stex = 0;
         loopv(slot->sts)
         {

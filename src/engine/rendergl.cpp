@@ -2467,6 +2467,14 @@ void gl_drawframe()
 
     xtravertsva = xtraverts = glde = gbatches = 0;
 
+    // M1: marco de sombra único y pase de sombras antes de la visibilidad (ver docs/sombras-vr-diseno.md).
+    if(shadowmap && !drawtex)
+    {
+        extern void computeshadowframe(); extern void rendershadowmap();
+        computeshadowframe();
+        rendershadowmap();
+    }
+
     visiblecubes();
 
     glClear(GL_DEPTH_BUFFER_BIT|(wireframe && editmode ? GL_COLOR_BUFFER_BIT : 0));

@@ -1560,7 +1560,6 @@ void rendergeom(float causticspass, bool fogpass)
     }
     if(!doZP) 
     {
-        if(shadowmap && mainpass) rendershadowmap();
         setupgeom(cur);
         if(doSM) pushshadowmap();
     }
@@ -1632,7 +1631,6 @@ void rendergeom(float causticspass, bool fogpass)
     {
 		glFlush();
 
-        if(shadowmap && mainpass) rendershadowmap();
         setupgeom(cur);
         if(doSM) pushshadowmap();
 
